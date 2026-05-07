@@ -1,114 +1,111 @@
 /**
- * Wrapper da API do Mercado Livre.
+ * Scraping da listagem pública do Mercado Livre.
  *
- * Doc: https://api.mercadolibre.com/sites/MLB/search?q=...
+ * Por que NÃO usamos a API oficial:
+ *   ML mudou política em 2024 — /sites/MLB/search retorna 403 mesmo com
+ *   OAuth user válido (testado). Restou-nos a página HTML pública.
  *
- * IMPORTANTE: ML mudou política em 2024 — busca sem App registrado retorna
- * 403. Pra funcionar, é preciso registrar uma App grátis em
- * https://developers.mercadolivre.com.br/devcenter e configurar:
- *   ML_ACCESS_TOKEN  — token de acesso da App (sem necessidade de OAuth user)
+ * URL: https://lista.mercadolivre.com.br/<termo-com-hifens>
  *
- * Sem o token, esta service retorna vazio com flag de erro (e o consolidador
- * continua chamando OLX e Web Motor). Quando o Rafa configurar, ML volta.
- *
- * Categorias úteis:
- *   MLB1747  — Carros, Motos e Outros (top-level)
- *   MLB5672  — Acessórios para Veículos
- *   MLB1763  — Peças de Carros e Caminhonetes
+ * Exige Cloudflare Worker proxy ativo (CLOUDFLARE_PROXY_URL) — IPs do
+ * datacenter Vercel são bloqueados pelo anti-bot do ML.
  */
 
-const axios = require('axios');
+const cheerio = require('cheerio');
 const proxyFetch = require('./proxyFetch');
 
-const ML_BASE = 'https://api.mercadolibre.com/sites/MLB/search';
-const TIMEOUT = 8000;
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+const TIMEOUT = 12000;
 
-/**
- * @param {Object} params
- * @param {string} params.q  termo de busca
- * @param {string} [params.modelo]   ex: 'C10' — anexa à query pra precisão
- * @param {Object} [params.filtros]
- * @param {number} [params.filtros.precoMin]
- * @param {number} [params.filtros.precoMax]
- * @param {string} [params.filtros.condicao]   'new'|'used'
- * @param {string} [params.filtros.estado]     'SP', 'RJ', etc
- * @param {number} [params.limit]   default 30
- */
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
-  if (!q) throw new Error('q (termo de busca) obrigatório');
-
-  /* Compõe query: se modelo presente e não está na query, anexa */
+  if (!q) throw new Error('q obrigatório');
   const fullQ = modelo && !q.toLowerCase().includes(modelo.toLowerCase())
     ? `${q} ${modelo}`
     : q;
 
-  const params = {
-    q: fullQ,
-    limit: Math.min(limit, 50),
-    category: 'MLB1747',
-  };
-  if (filtros.precoMin) params.price = `${filtros.precoMin}-*`;
-  if (filtros.precoMax) params.price = `${filtros.precoMin || 0}-${filtros.precoMax}`;
-  if (filtros.condicao === 'new') params.condition = 'new';
-  if (filtros.condicao === 'used') params.condition = 'used';
-  if (filtros.estado) params.state = filtros.estado;
-
-  /* OAuth user token (Rafa autoriza 1x via /api/ml/start; refresh automático).
-     Sem token salvo → ML retorna 403 e a busca segue só com OLX/Web Motor. */
-  const headers = { 'User-Agent': UA, 'Accept': 'application/json' };
-  const mlAuth = require('./mlAuth');
-  const userToken = await mlAuth.getAccessToken();
-  if (userToken) {
-    headers['Authorization'] = `Bearer ${userToken}`;
-  } else if (process.env.ML_ACCESS_TOKEN) {
-    /* Fallback legado — token manual via env */
-    headers['Authorization'] = `Bearer ${process.env.ML_ACCESS_TOKEN}`;
+  /* Monta URL: /<slug>?... — preço opcional */
+  let url = `https://lista.mercadolivre.com.br/${slugify(fullQ)}`;
+  const sp = new URLSearchParams();
+  if (filtros.precoMin || filtros.precoMax) {
+    const min = filtros.precoMin || 0;
+    const max = filtros.precoMax || '';
+    sp.set('price', `${min}-${max}`);
   }
+  if (sp.toString()) url += `?${sp.toString()}`;
 
-  let resp;
+  let html;
   try {
-    resp = await proxyFetch.get(ML_BASE, { params, timeout: TIMEOUT, headers });
+    const resp = await proxyFetch.get(url, {
+      timeout: TIMEOUT,
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+    });
+    html = resp.data;
   } catch (err) {
-    /* 403 = sem OAuth user válido. ML mudou política em 2024.
-       Não derruba a busca — OLX/Web Motor seguem rodando. */
     const status = err.response?.status;
     const note = status === 403
-      ? 'Mercado Livre desconectado — clique em Conectar ML no app'
+      ? 'Mercado Livre bloqueou — Worker precisa permitir lista.mercadolivre.com.br'
       : null;
     console.warn('[mercadoLivre] busca falhou:', err.message);
-    return { source: 'mercadolivre', results: [], error: err.message, note, needsAuth: status === 403 };
+    return { source: 'mercadolivre', results: [], error: err.message, note };
   }
 
-  /* proxyFetch retorna body cru (text). Se vier string, parsea como JSON */
-  let data = resp.data;
-  if (typeof data === 'string') {
-    try { data = JSON.parse(data); } catch { data = {}; }
-  }
-  const items = data?.results || [];
-  const results = items.map(normalize);
-  return { source: 'mercadolivre', results, total: data?.paging?.total };
-}
+  try {
+    const $ = cheerio.load(html);
+    const results = [];
+    /* Cards de resultado — seletor estável da listagem ML */
+    $('li.ui-search-layout__item, .ui-search-result, .poly-card').slice(0, limit).each((_i, el) => {
+      const $el = $(el);
+      const $link = $el.find('a.poly-component__title, a.ui-search-link, h2 a').first();
+      const url = $link.attr('href') || $el.find('a[href*="/MLB-"]').first().attr('href');
+      if (!url) return;
+      const title = ($link.text() || $el.find('.poly-component__title, .ui-search-item__title').first().text() || '').trim();
+      if (!title) return;
 
-/* Normaliza shape do item ML pro shape comum do app */
-function normalize(item) {
-  return {
-    source: 'mercadolivre',
-    externalId: item.id,
-    title: item.title,
-    price: item.price,
-    currency: item.currency_id || 'BRL',
-    condition: item.condition,
-    url: item.permalink,
-    thumbUrl: item.thumbnail?.replace('http:', 'https:'),
-    location: item.address ? [item.address.city_name, item.address.state_id].filter(Boolean).join(' - ') : null,
-    seller: item.seller?.nickname || null,
-    raw: {
-      acceptsMercadoPago: item.accepts_mercadopago,
-      shipping: item.shipping?.free_shipping || false,
-      soldQuantity: item.sold_quantity,
-    },
-  };
+      /* Preço — várias variantes de DOM (depende da query renderizada) */
+      const priceText = $el.find('.andes-money-amount__fraction').first().text().trim();
+      const centsText = $el.find('.andes-money-amount__cents').first().text().trim();
+      let price = null;
+      if (priceText) {
+        const integer = parseInt(priceText.replace(/\D/g, ''), 10);
+        const cents = parseInt(centsText || '0', 10);
+        if (Number.isFinite(integer)) price = integer + (Number.isFinite(cents) ? cents / 100 : 0);
+      }
+
+      const thumb = $el.find('img.poly-component__picture, img.ui-search-result-image__element').first().attr('src')
+                || $el.find('img').first().attr('data-src')
+                || $el.find('img').first().attr('src');
+      const idMatch = url.match(/MLB-?(\d+)/);
+      const externalId = idMatch ? `MLB${idMatch[1]}` : url;
+
+      const freeShipping = $el.find('.poly-component__shipping, [class*="shipping"]').text().toLowerCase().includes('frete grátis');
+
+      results.push({
+        source: 'mercadolivre',
+        externalId,
+        title,
+        price,
+        currency: 'BRL',
+        url: url.startsWith('http') ? url : `https://www.mercadolivre.com.br${url}`,
+        thumbUrl: thumb && !thumb.startsWith('data:') ? thumb : null,
+        location: null,
+        raw: { freeShipping },
+      });
+    });
+    return { source: 'mercadolivre', results };
+  } catch (e) {
+    console.warn('[mercadoLivre] parser falhou:', e.message);
+    return { source: 'mercadolivre', results: [], error: 'parser falhou: ' + e.message };
+  }
 }
 
 module.exports = { search };
