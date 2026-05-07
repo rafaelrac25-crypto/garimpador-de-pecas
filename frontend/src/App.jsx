@@ -5,6 +5,7 @@ import Logo from './components/Logo';
 import NotificationBell from './components/NotificationBell';
 import Home from './pages/Home';
 import Results from './pages/Results';
+import Vehicle from './pages/Vehicle';
 
 const ACCESS_KEY_STORAGE = 'garimpador_access_key';
 
@@ -56,7 +57,6 @@ function AccessGate({ onUnlocked }) {
 }
 
 function Header() {
-  const location = useLocation();
   return (
     <header style={{
       position: 'sticky', top: 0, zIndex: 50,
@@ -64,11 +64,15 @@ function Header() {
       borderBottom: '1px solid var(--c-border)',
       padding: '10px 16px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: '8px',
     }}>
       <Link to="/" style={{ display: 'flex', alignItems: 'center' }}>
         <Logo height={40} />
       </Link>
-      <NotificationBell />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <Link to="/c14" className="gar-chip" style={{ fontSize: '11.5px' }}>C14</Link>
+        <NotificationBell />
+      </div>
     </header>
   );
 }
@@ -86,6 +90,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/resultados" element={<Results />} />
+        <Route path="/c14" element={<Vehicle />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

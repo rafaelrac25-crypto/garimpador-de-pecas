@@ -85,3 +85,48 @@ CREATE TABLE IF NOT EXISTS error_logs (
 
 CREATE INDEX IF NOT EXISTS idx_error_logs_recent ON error_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_error_logs_open ON error_logs(resolved_at, created_at DESC);
+
+-- C14 do Costa — dados da caminhonete (single-row, id=1)
+CREATE TABLE IF NOT EXISTS vehicle (
+  id INTEGER PRIMARY KEY,
+  apelido TEXT,                  -- ex: "C14 do Costa"
+  modelo TEXT,                   -- ex: "Chevrolet C14"
+  ano INTEGER,                   -- ex: 1964
+  placa TEXT,
+  chassi TEXT,
+  motor TEXT,                    -- ex: "6cc 4.1"
+  cor TEXT,
+  combustivel TEXT,              -- gasolina|etanol|alcool|flex
+  km_atual INTEGER,
+  km_atual_at TEXT,              -- ISO date — quando o km foi registrado
+  foto_url TEXT,
+  pressao_pneu_dianteiro REAL,
+  pressao_pneu_traseiro REAL,
+  vencimento_ipva TEXT,
+  vencimento_seguro TEXT,
+  observacoes TEXT,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Log de manutenção/troca de peça
+CREATE TABLE IF NOT EXISTS maintenance_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,            -- 'oleo_motor'|'filtro_combustivel'|'agua_radiador'|'carburador'|'pneu'|'bateria'|'embreagem'|'pastilha'|'outro'
+  peca TEXT NOT NULL,            -- nome da peça/serviço
+  marca TEXT,
+  km INTEGER,                    -- km do carro na hora da troca
+  data TEXT NOT NULL,            -- ISO date (YYYY-MM-DD)
+  durabilidade_km INTEGER,       -- ex: 5000 (alerta quando passar disso)
+  durabilidade_meses INTEGER,    -- ex: 12
+  valor REAL,
+  fornecedor TEXT,
+  notas TEXT,
+  foto_url TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_maintenance_kind_date ON maintenance_logs(kind, data DESC);
+
+-- Pré-popula vehicle row 1 com defaults C14 do Costa
+INSERT OR IGNORE INTO vehicle (id, apelido, modelo, ano, combustivel)
+VALUES (1, 'C14 do Costa', 'Chevrolet C14', 1964, 'gasolina');
