@@ -1,5 +1,44 @@
 # CRITICAL_STATE — Garimpador de Peças
 
+## ✓ CHECKPOINT — 2026-05-07 — PROXY CF + OAUTH ML LIGADOS (commit 46d5048)
+
+**O que mudou nesta sessão:**
+- **Cloudflare Worker proxy** criado e funcionando (`https://jolly-sky-64e9.rafaelrac25.workers.dev`).
+  Allowlist: api.mercadolibre.com, lista.mercadolivre.com.br, www.olx.com.br,
+  www.webmotors.com.br + estáticos. **OLX testado: 200 OK 611KB de HTML real**.
+- `services/proxyFetch.js` roteia OLX/Webmotors via worker quando
+  `CLOUDFLARE_PROXY_URL` setado. olx.js e webmotors.js já adaptados.
+- **OAuth Mercado Livre implementado** — ML mudou política em 2024 e bloqueia
+  client_credentials (testado: 403). Caminho oficial: OAuth user, autoriza 1x,
+  refresh 6 meses.
+  - Tabela `ml_tokens` (id=1, single user)
+  - `services/mlAuth.js` com `getAccessToken()` + auto-refresh
+  - Rotas `/api/ml/start` (com auth), `/api/ml/status`, `/api/ml/disconnect`
+  - Rota `/api/ml-callback` (sem auth — ML é quem chama)
+  - Frontend: chip ML on/off no header (clica → fluxo OAuth)
+- **Webmotors:** captcha PerimeterX bloqueia mesmo via Worker. Deferido.
+
+### ⚠️ AÇÕES PENDENTES DO RAFA (pra ML funcionar em prod)
+1. **Painel ML** (https://developers.mercadolivre.com.br/devcenter):
+   - App 7601566341664366 → Editar → Redirect URIs
+   - Adicionar: `https://garimpador-de-pecas.vercel.app/api/ml-callback`
+2. **Vercel env vars** (Settings → Environment Variables):
+   - `CLOUDFLARE_PROXY_URL` = `https://jolly-sky-64e9.rafaelrac25.workers.dev`
+   - `CLOUDFLARE_PROXY_KEY` = `gp_a8f3e7d29c1b54f6e09b2c8d7a3f5e91`
+   - `ML_CLIENT_ID` = `7601566341664366`
+   - `ML_CLIENT_SECRET` = `kuXyMWw38ZcCA12RM20A3foooq4ajVor`
+   - `ML_REDIRECT_URI` = `https://garimpador-de-pecas.vercel.app/api/ml-callback`
+3. **Neon DB grátis** (urgente — sem isso token vira pó em cada cold start):
+   - Vercel Dashboard → Storage → Connect Database → Neon → free tier
+   - `DATABASE_URL` é setado automaticamente
+4. **Redeploy** Vercel (push já dispara; se setar env depois, fazer Redeploy manual).
+
+**Fluxo após Rafa configurar:**
+- Abrir app → chip "ML off" → clicar → autoriza no ML → volta "ML on"
+- Buscar peça → resultados ML + OLX consolidados
+
+---
+
 ## 🎯 CHECKPOINT — 2026-05-07 — PROJETO CRIADO (FASE 0 EM ANDAMENTO)
 
 **Pasta criada:** `C:\Users\Rafa\garimpador-de-pecas`
