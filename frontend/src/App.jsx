@@ -56,7 +56,37 @@ function AccessGate({ onUnlocked }) {
   );
 }
 
-function Header() {
+function MLChip({ accessKey }) {
+  const [status, setStatus] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get('/api/ml/status').then(r => { if (alive) setStatus(r.data); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const connected = status?.connected;
+  const onClick = () => {
+    /* /api/ml/start exige X-Access-Key — query string passa */
+    window.location.href = `/api/ml/start?key=${encodeURIComponent(accessKey)}`;
+  };
+  if (!status) return null;
+  return (
+    <button
+      onClick={onClick}
+      title={connected ? `ML conectado (expira em ${status.expires_in_min} min)` : 'Conectar Mercado Livre'}
+      className="gar-chip"
+      style={{
+        fontSize: '11.5px',
+        background: connected ? 'var(--c-success-soft, #e6f5e6)' : 'var(--c-bowtie-soft, #f5e0dd)',
+        color: connected ? 'var(--c-success, #2d7a3a)' : 'var(--c-bowtie, #B8362A)',
+        border: 'none',
+      }}
+    >
+      ML {connected ? 'on' : 'off'}
+    </button>
+  );
+}
+
+function Header({ accessKey }) {
   return (
     <header style={{
       position: 'sticky', top: 0, zIndex: 50,
@@ -70,6 +100,7 @@ function Header() {
         <Logo height={40} />
       </Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <MLChip accessKey={accessKey} />
         <Link to="/c14" className="gar-chip" style={{ fontSize: '11.5px' }}>C14</Link>
         <NotificationBell />
       </div>
@@ -86,7 +117,7 @@ export default function App() {
 
   return (
     <>
-      <Header />
+      <Header accessKey={accessKey} />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/resultados" element={<Results />} />

@@ -127,6 +127,18 @@ CREATE TABLE IF NOT EXISTS maintenance_logs (
 
 CREATE INDEX IF NOT EXISTS idx_maintenance_kind_date ON maintenance_logs(kind, data DESC);
 
+-- OAuth Mercado Livre — token único (single-row, id=1).
+-- Rafa autoriza 1 vez via /api/ml/start, callback salva tokens.
+-- Refresh token rota a cada uso (ML rotation policy).
+CREATE TABLE IF NOT EXISTS ml_tokens (
+  id INTEGER PRIMARY KEY,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  expires_at TEXT NOT NULL,      -- ISO datetime
+  user_id TEXT,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Pré-popula vehicle row 1 com defaults C14 do Costa
 INSERT OR IGNORE INTO vehicle (id, apelido, modelo, ano, combustivel)
 VALUES (1, 'C14 do Costa', 'Chevrolet C14', 1964, 'gasolina');

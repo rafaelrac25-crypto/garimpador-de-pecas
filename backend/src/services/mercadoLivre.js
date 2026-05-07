@@ -18,6 +18,7 @@
  */
 
 const axios = require('axios');
+const proxyFetch = require('./proxyFetch');
 
 const ML_BASE = 'https://api.mercadolibre.com/sites/MLB/search';
 const TIMEOUT = 8000;
@@ -53,28 +54,40 @@ async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
   if (filtros.condicao === 'used') params.condition = 'used';
   if (filtros.estado) params.state = filtros.estado;
 
-  /* Token da App (registro grátis em https://developers.mercadolivre.com.br) */
+  /* OAuth user token (Rafa autoriza 1x via /api/ml/start; refresh automático).
+     Sem token salvo → ML retorna 403 e a busca segue só com OLX/Web Motor. */
   const headers = { 'User-Agent': UA, 'Accept': 'application/json' };
-  if (process.env.ML_ACCESS_TOKEN) {
+  const mlAuth = require('./mlAuth');
+  const userToken = await mlAuth.getAccessToken();
+  if (userToken) {
+    headers['Authorization'] = `Bearer ${userToken}`;
+  } else if (process.env.ML_ACCESS_TOKEN) {
+    /* Fallback legado — token manual via env */
     headers['Authorization'] = `Bearer ${process.env.ML_ACCESS_TOKEN}`;
   }
 
   let resp;
   try {
-    resp = await axios.get(ML_BASE, { params, timeout: TIMEOUT, headers });
+    resp = await proxyFetch.get(ML_BASE, { params, timeout: TIMEOUT, headers });
   } catch (err) {
-    /* 403 = App não configurado. Outros = rede/API fora. Não derruba tudo. */
+    /* 403 = sem OAuth user válido. ML mudou política em 2024.
+       Não derruba a busca — OLX/Web Motor seguem rodando. */
     const status = err.response?.status;
-    const note = status === 403 && !process.env.ML_ACCESS_TOKEN
-      ? 'Mercado Livre exige App registrada — configurar ML_ACCESS_TOKEN no .env'
+    const note = status === 403
+      ? 'Mercado Livre desconectado — clique em Conectar ML no app'
       : null;
     console.warn('[mercadoLivre] busca falhou:', err.message);
-    return { source: 'mercadolivre', results: [], error: err.message, note };
+    return { source: 'mercadolivre', results: [], error: err.message, note, needsAuth: status === 403 };
   }
 
-  const items = resp.data?.results || [];
+  /* proxyFetch retorna body cru (text). Se vier string, parsea como JSON */
+  let data = resp.data;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch { data = {}; }
+  }
+  const items = data?.results || [];
   const results = items.map(normalize);
-  return { source: 'mercadolivre', results, total: resp.data?.paging?.total };
+  return { source: 'mercadolivre', results, total: data?.paging?.total };
 }
 
 /* Normaliza shape do item ML pro shape comum do app */

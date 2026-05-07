@@ -20,9 +20,13 @@ app.use(express.json({ limit: '5mb' }));
    - /api/cron:   Vercel manda Authorization: Bearer <CRON_SECRET> próprio */
 app.use('/api/health', require('./routes/health'));
 app.use('/api/cron', require('./routes/cron'));
+/* Callback OAuth Mercado Livre — sem auth do app (ML é quem redireciona) */
+app.use('/api/ml-callback', require('./routes/mlCallback'));
 
 /* Tudo abaixo de /api exige token de usuário (?key= ou X-Access-Key) */
 app.use('/api', auth);
+
+app.use('/api/ml', require('./routes/mlAuth'));
 
 app.use('/api/search', require('./routes/search'));
 app.use('/api/photo-search', require('./routes/photoSearch'));

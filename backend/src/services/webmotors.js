@@ -11,6 +11,7 @@
 
 const axios = require('axios');
 const cheerio = require('cheerio');
+const proxyFetch = require('./proxyFetch');
 
 const WEBMOTORS_SEARCH = 'https://www.webmotors.com.br/pecas';
 const TIMEOUT = 10000;
@@ -24,7 +25,7 @@ async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
 
   let html;
   try {
-    const resp = await axios.get(WEBMOTORS_SEARCH, {
+    const resp = await proxyFetch.get(WEBMOTORS_SEARCH, {
       params: { busca: fullQ },
       timeout: TIMEOUT,
       headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9' },

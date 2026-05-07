@@ -10,6 +10,7 @@
 
 const axios = require('axios');
 const cheerio = require('cheerio');
+const proxyFetch = require('./proxyFetch');
 
 /* URL geral de busca da OLX — busca em todas categorias com filtro de termo.
    A URL específica de "/autos-e-pecas/pecas-e-acessorios" retorna 404 sem
@@ -30,7 +31,8 @@ async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
 
   let html;
   try {
-    const resp = await axios.get(OLX_BASE, {
+    /* Usa Cloudflare Worker proxy quando configurado (resolve bloqueio Vercel) */
+    const resp = await proxyFetch.get(OLX_BASE, {
       params,
       timeout: TIMEOUT,
       headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9' },
