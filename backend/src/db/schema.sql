@@ -70,3 +70,18 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts(active, last_checked_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at, created_at DESC);
+
+-- Log de erros do sistema (aba Diagnósticos do sino)
+CREATE TABLE IF NOT EXISTS error_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL,          -- ex 'mercadoLivre', 'olx', 'partRecognition', 'cron'
+  action TEXT,                   -- ex 'search', 'fetchAndResize', 'verifyMatch'
+  code TEXT,                     -- HTTP status ou código próprio do erro
+  message TEXT NOT NULL,         -- mensagem do erro (sanitizada — sem secrets)
+  context TEXT,                  -- JSON: query/url/parâmetros relevantes (sanitizados)
+  resolved_at TEXT,              -- NULL = aberto
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_error_logs_recent ON error_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_error_logs_open ON error_logs(resolved_at, created_at DESC);

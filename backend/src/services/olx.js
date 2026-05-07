@@ -95,11 +95,19 @@ async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
 }
 
 function normalizeNextData(ad) {
+  /* OLX às vezes manda priceValue (número) e às vezes price (string formatada).
+     Garante que o output sempre é número ou null — frontend conta com isso. */
+  let priceNum = null;
+  if (Number.isFinite(ad.priceValue)) priceNum = ad.priceValue;
+  else if (typeof ad.price === 'number') priceNum = ad.price;
+  else if (ad.price) priceNum = parsePriceBR(ad.price);
+  if (!Number.isFinite(priceNum) || priceNum <= 0) priceNum = null;
+
   return {
     source: 'olx',
     externalId: String(ad.listId || ad.id || ad.url),
     title: ad.subject || ad.title,
-    price: ad.priceValue || (ad.price ? parsePriceBR(ad.price) : null),
+    price: priceNum,
     currency: 'BRL',
     url: ad.url,
     thumbUrl: ad.thumbnail || ad.images?.[0]?.original || null,

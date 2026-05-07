@@ -15,18 +15,18 @@ const TONE = {
   neutral: { color: 'var(--c-text-3)',    bg: 'var(--c-surface)',      border: 'var(--c-border)' },
 };
 
+/* SEM emojis — Rafa não gosta. Cor + ponto sólido bastam pra status visual. */
 export const STATUS_MAP = {
-  /* Locais (lowercase) */
-  active:    { label: 'Ativo',         tone: 'success', icon: '🟢' },
-  ok:        { label: 'OK',            tone: 'success', icon: '🟢' },
-  paused:    { label: 'Pausado',       tone: 'warning', icon: '⏸️' },
-  pending:   { label: 'Aguardando',    tone: 'warning', icon: '⏳' },
-  loading:   { label: 'Carregando…',   tone: 'warning', icon: '⏳' },
-  failed:    { label: 'Falhou',        tone: 'danger',  icon: '❌' },
-  error:     { label: 'Erro',          tone: 'danger',  icon: '❌' },
-  done:      { label: 'Concluído',     tone: 'success', icon: '✅' },
-  draft:     { label: 'Rascunho',      tone: 'neutral', icon: '📝' },
-  empty:     { label: 'Vazio',         tone: 'neutral', icon: '·' },
+  active:    { label: 'Ativo',         tone: 'success' },
+  ok:        { label: 'OK',            tone: 'success' },
+  paused:    { label: 'Pausado',       tone: 'warning' },
+  pending:   { label: 'Aguardando',    tone: 'warning' },
+  loading:   { label: 'Carregando',    tone: 'warning' },
+  failed:    { label: 'Falhou',        tone: 'danger'  },
+  error:     { label: 'Erro',          tone: 'danger'  },
+  done:      { label: 'Concluído',     tone: 'success' },
+  draft:     { label: 'Rascunho',      tone: 'neutral' },
+  empty:     { label: 'Vazio',         tone: 'neutral' },
 };
 
 export function statusOf(key) {
@@ -37,7 +37,6 @@ export function statusOf(key) {
       key: raw || 'unknown',
       label: raw || '—',
       tone: 'neutral',
-      icon: '·',
       ...TONE.neutral,
       dot: TONE.neutral.color,
     };
