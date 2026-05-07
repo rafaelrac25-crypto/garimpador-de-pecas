@@ -7,56 +7,7 @@ import Home from './pages/Home';
 import Results from './pages/Results';
 import Vehicle from './pages/Vehicle';
 
-const ACCESS_KEY_STORAGE = 'garimpador_access_key';
-
-function AccessGate({ onUnlocked }) {
-  const [searchParams] = useSearchParams();
-  const [tryingKey, setTryingKey] = useState(searchParams.get('key') || '');
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-
-  async function tryKey(k) {
-    setBusy(true); setError(null);
-    try {
-      await api.get('/api/favorites', { headers: { 'X-Access-Key': k } });
-      localStorage.setItem(ACCESS_KEY_STORAGE, k);
-      onUnlocked(k);
-    } catch (err) {
-      setError(err?.response?.status === 401 ? 'Token inválido' : `Erro: ${err.message}`);
-    } finally { setBusy(false); }
-  }
-
-  useEffect(() => { if (tryingKey && !busy && !error) tryKey(tryingKey); /* eslint-disable-line */ }, []);
-
-  return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-      <div className="gar-card" style={{ maxWidth: '420px', width: '100%', padding: '36px 28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-          <Logo height={70} />
-        </div>
-        <div style={{ fontSize: '14px', color: 'var(--c-text-3)', marginBottom: '24px', textAlign: 'center', lineHeight: 1.5 }}>
-          Garimpador de Peças<br />
-          <span style={{ fontSize: '12.5px' }}>Acesso restrito — cole o token pra entrar.</span>
-        </div>
-        <input
-          type="password"
-          value={tryingKey}
-          onChange={(e) => setTryingKey(e.target.value)}
-          placeholder="token de acesso"
-          autoFocus
-          onKeyDown={(e) => { if (e.key === 'Enter' && tryingKey) tryKey(tryingKey); }}
-          style={{ width: '100%', marginBottom: '12px' }}
-        />
-        {error && <div style={{ fontSize: '12px', color: 'var(--c-bowtie)', marginBottom: '12px' }}>{error}</div>}
-        <button onClick={() => tryKey(tryingKey)} disabled={!tryingKey || busy} className="gar-btn" style={{ width: '100%' }}>
-          {busy ? 'Verificando…' : 'Entrar'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function MLChip({ accessKey }) {
+function MLChip() {
   const [status, setStatus] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -65,8 +16,9 @@ function MLChip({ accessKey }) {
   }, []);
   const connected = status?.connected;
   const onClick = () => {
-    /* /api/ml/start exige X-Access-Key — query string passa */
-    window.location.href = `/api/ml/start?key=${encodeURIComponent(accessKey)}`;
+    /* Sem ACCESS_KEY no backend, o /api/ml/start aceita sem ?key= */
+    const k = localStorage.getItem('garimpador_access_key');
+    window.location.href = k ? `/api/ml/start?key=${encodeURIComponent(k)}` : '/api/ml/start';
   };
   if (!status) return null;
   return (
@@ -86,7 +38,7 @@ function MLChip({ accessKey }) {
   );
 }
 
-function Header({ accessKey }) {
+function Header() {
   return (
     <header style={{
       position: 'sticky', top: 0, zIndex: 50,
@@ -100,7 +52,7 @@ function Header({ accessKey }) {
         <Logo height={40} />
       </Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <MLChip accessKey={accessKey} />
+        <MLChip />
         <Link to="/c14" className="gar-chip" style={{ fontSize: '11.5px' }}>C14</Link>
         <NotificationBell />
       </div>
@@ -109,15 +61,20 @@ function Header({ accessKey }) {
 }
 
 export default function App() {
-  const [accessKey, setAccessKey] = useState(() => localStorage.getItem(ACCESS_KEY_STORAGE) || null);
-
-  if (!accessKey) {
-    return <AccessGate onUnlocked={(k) => setAccessKey(k)} />;
-  }
+  /* Se a URL tiver ?key=..., persiste no localStorage uma vez (compat com link
+     antigo) e remove da URL. Sem gate — entra direto. */
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const k = searchParams.get('key');
+    if (k) {
+      localStorage.setItem('garimpador_access_key', k);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
-      <Header accessKey={accessKey} />
+      <Header />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/resultados" element={<Results />} />

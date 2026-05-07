@@ -12,10 +12,17 @@ let dbImpl;
 if (hasNeon) {
   const { neon } = require('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
+  /* Traduz placeholders SQLite (?) pra Postgres ($1, $2, ...).
+     Resto do código usa convenção SQLite por simplicidade. */
+  function toPg(text) {
+    let i = 0;
+    return text.replace(/\?/g, () => `$${++i}`);
+  }
   dbImpl = {
     async query(text, params = []) {
-      const rows = await sql(text, params);
-      return { rows };
+      const rows = await sql(toPg(text), params);
+      const arr = Array.isArray(rows) ? rows : [];
+      return { rows: arr, rowCount: arr.length };
     },
   };
   console.log('[db] usando Postgres Neon (prod)');

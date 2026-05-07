@@ -5,7 +5,10 @@ const path = require('path');
 const db = require('./index');
 
 async function init() {
-  const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
+  /* Postgres (Neon) usa schema-postgres.sql; SQLite/stub usa schema.sql */
+  const isPostgres = !!process.env.DATABASE_URL;
+  const file = isPostgres ? 'schema-postgres.sql' : 'schema.sql';
+  const sql = fs.readFileSync(path.join(__dirname, file), 'utf-8');
   /* Remove comentários (linhas começando com --) ANTES de splitar por ';'.
      Bug anterior: stmt que começava com cabeçalho '-- Garimpador...' era inteiro
      descartado pelo filter, derrubando o CREATE TABLE colado depois. */

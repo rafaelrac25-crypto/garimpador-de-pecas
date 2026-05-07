@@ -15,6 +15,21 @@ app.disable('x-powered-by');
 app.use(cors({ origin: process.env.FRONTEND_URL || true, credentials: false }));
 app.use(express.json({ limit: '5mb' }));
 
+/* Garante schema aplicado no boot. Idempotente — CREATE TABLE IF NOT EXISTS.
+   Roda assíncrono pra não bloquear handlers (cold start fica responsivo). */
+let schemaReady = null;
+function ensureSchema() {
+  if (!schemaReady) {
+    schemaReady = require('./db/init')()
+      .catch(err => console.error('[boot] init schema falhou:', err.message));
+  }
+  return schemaReady;
+}
+ensureSchema();
+/* Middleware: em prod (Neon), garante que tabelas existam antes da 1ª request
+   processar. Em dev SQLite, init local cobre — mas idempotente, sem custo. */
+app.use(async (req, res, next) => { await ensureSchema(); next(); });
+
 /* Rotas SEM auth de usuário (têm proteções próprias):
    - /api/health: monitor externo (público)
    - /api/cron:   Vercel manda Authorization: Bearer <CRON_SECRET> próprio */

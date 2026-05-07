@@ -6,9 +6,8 @@ const api = axios.create({
   timeout: 30000,
 });
 
-/* Interceptor: injeta o token de acesso em toda requisição.
-   Lê do localStorage. Se não tiver, deixa passar sem (backend retorna 401
-   e o App.jsx mostra a tela de bloqueio). */
+/* Sem gate de token — backend libera quando ACCESS_KEY env não está setada.
+   Mantém compat com link antigo: se localStorage tem key, ainda manda. */
 api.interceptors.request.use((config) => {
   const key = localStorage.getItem('garimpador_access_key');
   if (key) {
@@ -17,24 +16,5 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
-
-/* Interceptor de resposta: 401 → limpa token e força tela de bloqueio */
-api.interceptors.response.use(
-  (resp) => resp,
-  (err) => {
-    if (err?.response?.status === 401) {
-      const path = window.location.pathname;
-      /* Não limpa em endpoints de health (evita loop) */
-      if (!err.config?.url?.includes('/api/health')) {
-        localStorage.removeItem('garimpador_access_key');
-        if (path !== '/' && !path.includes('?key=')) {
-          /* Recarrega pra mostrar gate */
-          window.location.href = '/';
-        }
-      }
-    }
-    return Promise.reject(err);
-  }
-);
 
 export default api;
