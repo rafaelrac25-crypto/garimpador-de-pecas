@@ -81,3 +81,44 @@ Adicionar `manifest.json` + service worker simples → permite instalar o app no
 3. **GitHub repo + Vercel**: depois das fases backend, vou pedir Rafa criar repo `garimpador-de-pecas` (gh ou web) e conectar Vercel. Vou adicionar ADMIN_KEY/CRON_SECRET nas envs prod.
 
 4. **Postgres Neon**: criar projeto novo no Neon (free tier) e me passar `DATABASE_URL`. Pra prod só — local segue com SQLite.
+
+### Ofertas imperdíveis na home (parcialmente implementado)
+Pedida pelo Rafa em 2026-05-07 — área de destaque na home com promoções e
+ofertas que valem a pena.
+
+**Backend:** ✅ pronto. `GET /api/offers/featured?modelo=C10` retorna top 12
+ofertas ranqueadas por "atratividade" (foto + preço no quartil inferior +
+frete grátis). Cache em memória 30min. Roda 3 buscas paralelas dos termos
+mais quentes (kit motor, para-choque, caçamba) e cruza por score.
+
+**Frontend:** PENDENTE — Fase 1+ (visual). Sugestão: carousel horizontal
+mobile + grid 3 cols desktop. Cada card mostra foto, preço com %desconto
+estimado vs mediana, fonte (badge ML/OLX/WM), tag "frete grátis" se houver.
+
+**Refinos futuros:**
+- Cache em DB em vez de memória (sobrevive cold start Vercel)
+- Histórico de preços por anúncio: "este item caiu 20% em 3 dias" como prova
+- Toggle "novo" / "usado" / "ambos" no widget
+
+### Galeria @c14docosta na home (parcialmente implementado)
+Pedida pelo Rafa em 2026-05-07. Sessão de galeria com fotos do Instagram
+@c14docosta — vai dar identidade ao app (visual segue mesma estética).
+
+**Backend:** ✅ pronto. `GET /api/galeria` em 2 modos:
+- **Oficial:** se `IG_ACCESS_TOKEN` definido, busca via Instagram Graph API
+  (`/me/media`). Retorna fotos+vídeos+carrosséis com caption, permalink,
+  timestamp. Cache 1h.
+- **Estático:** fallback se token ausente — lê `backend/src/data/galeria-static.json`.
+  Bom pro MVP enquanto IG não está conectado.
+
+**Pra ativar Graph API (caminho oficial, gratuito):**
+1. App IG @c14docosta → Configurações → vira Business/Creator
+2. Conectar a uma Page do FB (criar uma vazia se não tiver)
+3. developers.facebook.com → criar App → solicitar permissões:
+   `instagram_basic`, `pages_show_list`, `pages_read_engagement`
+4. Gerar long-lived token (60 dias, refresh automático fácil)
+5. Salvar como `IG_ACCESS_TOKEN` no Vercel (e local)
+
+**Frontend:** PENDENTE — Fase visual. Sugestão: grid 3 colunas mobile,
+6 desktop, lazy loading. Lightbox ao clicar. Carrossel de "destaques"
+no topo da home.

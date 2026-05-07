@@ -1,0 +1,4 @@
+{
+  "items": [],
+  "_doc": "Galeria estática — usar enquanto IG_ACCESS_TOKEN não está configurado. Cada item: { id, caption, type ('IMAGE'|'VIDEO'), url, permalink, timestamp }. Pode adicionar URLs de fotos do próprio servidor ou links públicos."
+}
