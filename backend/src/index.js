@@ -31,7 +31,7 @@ app.use('/api/offers', require('./routes/offers'));
 app.use('/api/galeria', require('./routes/galeria'));
 app.use('/api/alerts', require('./routes/alerts'));
 app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/ai', require('./routes/ai'));
+app.use('/api/verify', require('./routes/verify'));
 
 /* Servir SPA do frontend (build). Em dev local sem build, retorna 404 — usa Vite direto na 5173. */
 const distPath = path.join(__dirname, '..', '..', 'frontend', 'dist');
