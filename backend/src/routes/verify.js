@@ -72,14 +72,24 @@ router.post('/results', async (req, res) => {
   });
 });
 
-/* Helper: download + resize pra ≤768px (suficiente pra verificação rápida) */
+/* Helper: download + resize pra ≤768px (suficiente pra verificação rápida).
+   UA realista pra evitar bloqueio em CDNs (Wikipedia, alguns scraper-blockers).
+   Verifica content-type — se vier HTML (página de bloqueio), erra cedo. */
 async function fetchAndResize(url) {
   const resp = await axios.get(url, {
     responseType: 'arraybuffer',
-    timeout: 8000,
-    maxContentLength: 5 * 1024 * 1024,
-    headers: { 'User-Agent': 'Mozilla/5.0' },
+    timeout: 10000,
+    maxContentLength: 8 * 1024 * 1024,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+      'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+    },
   });
+  const ct = (resp.headers['content-type'] || '').toLowerCase();
+  if (!ct.startsWith('image/')) {
+    throw new Error(`URL não retornou imagem (content-type: ${ct || 'desconhecido'})`);
+  }
   return await sharp(Buffer.from(resp.data))
     .rotate()
     .resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })

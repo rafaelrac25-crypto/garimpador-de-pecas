@@ -2,9 +2,11 @@
  * Reconhecimento de peça automotiva via IA vision.
  *
  * Cadeia de fallback automática (qualidade → robustez):
- *   1. Gemini 2.5 Pro       — TOP de qualidade (50 req/dia free)
- *   2. Gemini 2.0 Flash     — boa qualidade, 1500 req/dia free
- *   3. Groq llama-4-scout   — alternativa rápida, 14.4k/dia free
+ *   1. Gemini 2.5 Flash     — TOP free tier (qualidade alta + thinking, 500 req/dia)
+ *   2. Gemini 2.0 Flash     — fallback estável, 1500 req/dia free
+ *   3. Groq llama-4-scout   — última linha, 14.4k/dia free
+ *
+ * (Gemini 2.5 Pro existe mas é PAGO — free tier = 0. Removido da cadeia.)
  *
  * Se a chamada do nível 1 falhar (quota, erro), tenta o próximo automaticamente.
  *
@@ -50,7 +52,7 @@ Anúncios de "lote", "caixa misturada" ou peça muito danificada → match=false
 
 /* Cadeia de provedores em ordem de qualidade */
 const PROVIDERS = [
-  { name: 'gemini-2.5-pro',   fn: callGemini, model: 'gemini-2.5-pro',           keyEnv: 'GEMINI_API_KEY' },
+  { name: 'gemini-2.5-flash', fn: callGemini, model: 'gemini-2.5-flash',         keyEnv: 'GEMINI_API_KEY' },
   { name: 'gemini-2.0-flash', fn: callGemini, model: 'gemini-2.0-flash',         keyEnv: 'GEMINI_API_KEY' },
   { name: 'groq-llama-4',     fn: callGroq,   model: 'meta-llama/llama-4-scout-17b-16e-instruct', keyEnv: 'GROQ_API_KEY' },
 ];
