@@ -1,4 +1,5 @@
-/* Roda as migrations iniciais do schema. Idempotente — pode rodar várias vezes. */
+/* Roda as migrations iniciais do schema. Idempotente.
+   Retorna { ok, applied, failed } pra diagnóstico. */
 
 const fs = require('fs');
 const path = require('path');
@@ -8,10 +9,12 @@ async function init() {
   /* Postgres (Neon) usa schema-postgres.sql; SQLite/stub usa schema.sql */
   const isPostgres = !!process.env.DATABASE_URL;
   const file = isPostgres ? 'schema-postgres.sql' : 'schema.sql';
-  const sql = fs.readFileSync(path.join(__dirname, file), 'utf-8');
-  /* Remove comentários (linhas começando com --) ANTES de splitar por ';'.
-     Bug anterior: stmt que começava com cabeçalho '-- Garimpador...' era inteiro
-     descartado pelo filter, derrubando o CREATE TABLE colado depois. */
+  const sqlPath = path.join(__dirname, file);
+  if (!fs.existsSync(sqlPath)) {
+    return { ok: false, error: `schema file not found: ${sqlPath}`, dialect: isPostgres ? 'postgres' : 'sqlite' };
+  }
+  const sql = fs.readFileSync(sqlPath, 'utf-8');
+  /* Remove comentários por linha antes de splitar por ';' */
   const cleaned = sql
     .split('\n')
     .map(line => {
@@ -23,18 +26,27 @@ async function init() {
     .split(';')
     .map(s => s.trim())
     .filter(Boolean);
+
+  const applied = [];
+  const failed = [];
   for (const stmt of statements) {
     try {
       await db.query(stmt);
+      applied.push(stmt.slice(0, 60).replace(/\s+/g, ' '));
     } catch (e) {
-      console.warn('[db:init] statement falhou (continuando):', e.message.slice(0, 100));
+      failed.push({
+        stmt: stmt.slice(0, 100).replace(/\s+/g, ' '),
+        error: e.message.slice(0, 200),
+      });
+      console.warn('[db:init] statement falhou:', e.message.slice(0, 150));
     }
   }
-  console.log('[db:init] schema aplicado');
+  console.log(`[db:init] ${applied.length} ok, ${failed.length} falharam`);
+  return { ok: failed.length === 0, applied: applied.length, failed, dialect: isPostgres ? 'postgres' : 'sqlite' };
 }
 
 if (require.main === module) {
-  init().then(() => process.exit(0)).catch(err => {
+  init().then((r) => { console.log(r); process.exit(r.ok ? 0 : 1); }).catch(err => {
     console.error('[db:init] erro fatal:', err);
     process.exit(1);
   });
