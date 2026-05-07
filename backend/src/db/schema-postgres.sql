@@ -125,11 +125,13 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_kind_date ON maintenance_logs(kind, d
 CREATE TABLE IF NOT EXISTS ml_tokens (
   id INTEGER PRIMARY KEY,
   access_token TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
+  refresh_token TEXT,
   expires_at TEXT NOT NULL,
   user_id TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE ml_tokens ALTER COLUMN refresh_token DROP NOT NULL;
 
 INSERT INTO vehicle (id, apelido, modelo, ano, combustivel)
 VALUES (1, 'C14 do Costa', 'Chevrolet C14', 1964, 'gasolina')

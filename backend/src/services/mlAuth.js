@@ -35,6 +35,8 @@ function getAuthorizeUrl(state = '') {
     response_type: 'code',
     client_id: clientId(),
     redirect_uri: redirectUri(),
+    /* offline_access pede ML pra retornar refresh_token (válido ~6 meses) */
+    scope: 'offline_access read',
   });
   if (state) params.set('state', state);
   return `${ML_AUTHORIZE}?${params.toString()}`;
@@ -71,12 +73,13 @@ async function refresh(refreshToken) {
 
 async function saveTokens({ access_token, refresh_token, expires_in, user_id }) {
   const expiresAt = new Date(Date.now() + (Number(expires_in) || 21600) * 1000).toISOString();
-  /* DELETE + INSERT — funciona em SQLite, Neon e stub in-memory.
-     Single row id=1 (uso pessoal único). */
+  /* refresh_token pode vir null se App ML não pediu offline_access ou for App
+     pública. Salvamos null nesse caso — quando access_token expirar (6h), o
+     getAccessToken retorna null e Rafa reautoriza clicando o chip ML. */
   await db.query('DELETE FROM ml_tokens WHERE id = ?', [1]);
   await db.query(
     'INSERT INTO ml_tokens (id, access_token, refresh_token, expires_at, user_id) VALUES (?, ?, ?, ?, ?)',
-    [1, access_token, refresh_token, expiresAt, user_id ? String(user_id) : null]
+    [1, access_token, refresh_token || null, expiresAt, user_id ? String(user_id) : null]
   );
 }
 
@@ -92,14 +95,17 @@ async function getAccessToken() {
   const expMs = new Date(t.expires_at).getTime();
   const safetyWindowMs = 5 * 60 * 1000;
   if (Date.now() < expMs - safetyWindowMs) return t.access_token;
-  /* Refresca */
+  /* Sem refresh_token → não há como renovar; Rafa precisa reautorizar */
+  if (!t.refresh_token) {
+    console.warn('[mlAuth] access_token expirou e sem refresh_token — reautorize via /api/ml/start');
+    return null;
+  }
   try {
     const fresh = await refresh(t.refresh_token);
     await saveTokens(fresh);
     return fresh.access_token;
   } catch (err) {
     console.warn('[mlAuth] refresh falhou:', err?.response?.data || err.message);
-    /* Refresh quebrou — Rafa precisa reconectar. Retorna null pra search seguir sem ML. */
     return null;
   }
 }
