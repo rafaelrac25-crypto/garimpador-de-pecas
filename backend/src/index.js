@@ -15,10 +15,13 @@ app.disable('x-powered-by');
 app.use(cors({ origin: process.env.FRONTEND_URL || true, credentials: false }));
 app.use(express.json({ limit: '5mb' }));
 
-/* Rotas públicas (sem auth) — health pra monitor externo */
+/* Rotas SEM auth de usuário (têm proteções próprias):
+   - /api/health: monitor externo (público)
+   - /api/cron:   Vercel manda Authorization: Bearer <CRON_SECRET> próprio */
 app.use('/api/health', require('./routes/health'));
+app.use('/api/cron', require('./routes/cron'));
 
-/* Tudo abaixo de /api exige token (?key= ou X-Access-Key) */
+/* Tudo abaixo de /api exige token de usuário (?key= ou X-Access-Key) */
 app.use('/api', auth);
 
 app.use('/api/search', require('./routes/search'));

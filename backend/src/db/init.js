@@ -6,11 +6,20 @@ const db = require('./index');
 
 async function init() {
   const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
-  /* Quebra em statements (SQLite não aceita múltiplos no mesmo prepare) */
-  const statements = sql
+  /* Remove comentários (linhas começando com --) ANTES de splitar por ';'.
+     Bug anterior: stmt que começava com cabeçalho '-- Garimpador...' era inteiro
+     descartado pelo filter, derrubando o CREATE TABLE colado depois. */
+  const cleaned = sql
+    .split('\n')
+    .map(line => {
+      const idx = line.indexOf('--');
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n');
+  const statements = cleaned
     .split(';')
     .map(s => s.trim())
-    .filter(s => s && !s.startsWith('--'));
+    .filter(Boolean);
   for (const stmt of statements) {
     try {
       await db.query(stmt);
