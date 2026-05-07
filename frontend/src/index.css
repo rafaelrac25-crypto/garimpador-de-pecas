@@ -1,0 +1,106 @@
+/* ============================
+   Garimpador de Peças — base CSS
+   Mobile-first com breakpoint desktop ≥1024px.
+   Variáveis derivadas do AdManager mas com paleta própria.
+   ============================ */
+
+:root {
+  /* Paleta (dark default) */
+  --c-bg:        #0F1115;
+  --c-surface:   #181C22;
+  --c-card-bg:   #1E232B;
+  --c-border:    #2A3038;
+  --c-accent:    #E0A458;     /* tom âmbar/cobre — combina com tema "antigo/garagem" */
+  --c-accent-soft: rgba(224,164,88,.18);
+  --c-success:   #34D399;
+  --c-warning:   #FBBF24;
+  --c-attention: #F87171;
+  --c-text-1:    #F3F4F6;
+  --c-text-2:    #D1D5DB;
+  --c-text-3:    #9CA3AF;
+  --c-text-4:    #6B7280;
+}
+
+[data-theme="light"] {
+  --c-bg:        #F7F8FA;
+  --c-surface:   #FFFFFF;
+  --c-card-bg:   #FFFFFF;
+  --c-border:    #E5E7EB;
+  --c-accent:    #B47233;
+  --c-accent-soft: rgba(180,114,51,.12);
+  --c-text-1:    #111827;
+  --c-text-2:    #374151;
+  --c-text-3:    #6B7280;
+  --c-text-4:    #9CA3AF;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--c-bg);
+  color: var(--c-text-1);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* Cards padrão */
+.ccb-card {
+  background: var(--c-card-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+}
+
+/* Container — mobile-first */
+.page-container {
+  max-width: 100%;
+  padding: 16px;
+  padding-bottom: 80px;  /* espaço pro BottomNav fixo */
+  margin: 0 auto;
+}
+
+/* Desktop ≥1024px */
+@media (min-width: 1024px) {
+  .page-container {
+    max-width: 1100px;
+    padding: 24px 32px;
+    padding-bottom: 24px;
+  }
+}
+
+/* Animações */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+/* Helpers */
+.hide-mobile { display: none; }
+@media (min-width: 1024px) {
+  .hide-mobile { display: initial; }
+  .hide-desktop { display: none; }
+}
+
+/* Inputs base */
+input, select, textarea {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--c-text-1);
+  outline: none;
+  transition: border-color .15s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--c-accent);
+}

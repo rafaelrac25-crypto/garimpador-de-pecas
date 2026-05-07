@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+.vercel/
+backend/data/*.db
+backend/data/*.db-journal
+frontend/.vite/
+# Dist do frontend é commitado (Vercel serve)
+# Mas cache local não:
+frontend/node_modules/
+backend/node_modules/

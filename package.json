@@ -1,0 +1,11 @@
+{
+  "name": "garimpador-de-pecas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "App pessoal de busca de peças de carro antigo (foco C10/C14)",
+  "scripts": {
+    "vercel-build": "cd frontend && npm install && npm run build",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev"
+  }
+}
