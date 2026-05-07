@@ -1,18 +1,20 @@
 /**
- * Reconhecimento de peça automotiva via Groq vision (llama-4-scout).
+ * Reconhecimento de peça automotiva via IA vision.
  *
- * Recebe uma imagem (Buffer ou base64), retorna JSON estruturado:
- *   { tipo, palavras, c10, c14, anoAprox, observacoes }
+ * Suporta DOIS provedores (auto-detect baseado em qual chave existe):
+ *   - GEMINI_API_KEY  → Google Gemini 2.0 Flash (recomendado pra vision)
+ *                       Free tier: 1500 req/dia. Qualidade superior em
+ *                       descrições de objetos físicos.
+ *   - GROQ_API_KEY    → Groq llama-4-scout (alternativa rápida)
+ *                       Free tier: 14.4k req/dia. Ótimo em texto.
  *
- * Free tier Groq: ~30 req/min — suficiente pra uso pessoal.
+ * Ordem de preferência: Gemini > Groq (Gemini é melhor em vision).
  *
- * Doc: https://console.groq.com/docs/vision
+ * Recebe Buffer/base64, retorna JSON: { tipo, palavras, c10, c14, anoAprox, observacoes }
  */
 
 const axios = require('axios');
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const TIMEOUT = 30000;
 
 const SYSTEM_PROMPT = `Você é especialista em peças de Chevrolet C10 e C14 (caminhonetes brasileiras anos 1964-1985).
@@ -28,29 +30,64 @@ Formato OBRIGATÓRIO:
   "observacoes": "string opcional — diferenças de versão, condição visível, sinais de uso"
 }
 
-Use sinônimos brasileiros nas palavras-chave (ex: "para-choque" e "parachoque"). Se a peça for genérica de caminhonete antiga e couber em ambas, marque c10 e c14 como true. Se a foto não tiver peça automotiva clara, devolva tipo "indefinido" e palavras vazias.`;
+Use sinônimos brasileiros (ex: "para-choque" e "parachoque"). Se a peça for genérica de caminhonete antiga e couber em ambas, marque c10 e c14 true. Se a foto não tiver peça automotiva clara, devolva tipo "indefinido" e palavras vazias.`;
 
 /**
- * @param {Buffer|string} imageInput  Buffer da imagem OU base64 OU data URL completo
- * @param {string} [mime]             ex 'image/jpeg' (default 'image/jpeg')
+ * @param {Buffer|string} imageInput
+ * @param {string} [mime]
+ * @returns {Promise<{tipo, palavras, c10, c14, anoAprox, observacoes, provider}>}
  */
 async function recognize(imageInput, mime = 'image/jpeg') {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY não configurada');
-  }
-
-  /* Normaliza entrada pra data URL */
-  let dataUrl;
+  /* Normaliza pra base64 cru e dataUrl */
+  let base64;
   if (Buffer.isBuffer(imageInput)) {
-    dataUrl = `data:${mime};base64,${imageInput.toString('base64')}`;
+    base64 = imageInput.toString('base64');
   } else if (typeof imageInput === 'string') {
-    dataUrl = imageInput.startsWith('data:') ? imageInput : `data:${mime};base64,${imageInput}`;
+    base64 = imageInput.startsWith('data:')
+      ? imageInput.split(',', 2)[1]
+      : imageInput;
   } else {
     throw new Error('imageInput deve ser Buffer ou string base64');
   }
 
+  /* Preferência: Gemini > Groq */
+  if (process.env.GEMINI_API_KEY) {
+    return { ...await recognizeWithGemini(base64, mime), provider: 'gemini' };
+  }
+  if (process.env.GROQ_API_KEY) {
+    return { ...await recognizeWithGroq(base64, mime), provider: 'groq' };
+  }
+  throw new Error('Nenhum provedor de IA configurado. Defina GEMINI_API_KEY (recomendado) ou GROQ_API_KEY no .env');
+}
+
+/* Google Gemini 2.0 Flash — melhor pra reconhecimento físico */
+async function recognizeWithGemini(base64, mime) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const body = {
-    model: MODEL,
+    contents: [{
+      parts: [
+        { text: SYSTEM_PROMPT + '\n\nIdentifique a peça nesta foto.' },
+        { inline_data: { mime_type: mime, data: base64 } },
+      ],
+    }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 600,
+      responseMimeType: 'application/json',
+    },
+  };
+
+  const resp = await axios.post(url, body, { timeout: TIMEOUT });
+  const content = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!content) throw new Error('Gemini retornou resposta vazia');
+  return parseAndSanitize(content);
+}
+
+/* Groq llama-4-scout — alternativa rápida */
+async function recognizeWithGroq(base64, mime) {
+  const dataUrl = `data:${mime};base64,${base64}`;
+  const body = {
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     temperature: 0.2,
     max_tokens: 600,
     response_format: { type: 'json_object' },
@@ -66,31 +103,27 @@ async function recognize(imageInput, mime = 'image/jpeg') {
     ],
   };
 
-  const resp = await axios.post(GROQ_URL, body, {
+  const resp = await axios.post('https://api.groq.com/openai/v1/chat/completions', body, {
     timeout: TIMEOUT,
     headers: {
       'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       'Content-Type': 'application/json',
     },
   });
-
   const content = resp.data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('Groq retornou resposta vazia');
+  return parseAndSanitize(content);
+}
 
+function parseAndSanitize(content) {
   let parsed;
   try {
     parsed = JSON.parse(content);
   } catch (e) {
-    /* Se vier com texto antes/depois do JSON, tenta extrair */
-    const m = content.match(/\{[\s\S]*\}/);
-    if (m) {
-      parsed = JSON.parse(m[0]);
-    } else {
-      throw new Error(`Groq devolveu não-JSON: ${content.slice(0, 200)}`);
-    }
+    const m = String(content).match(/\{[\s\S]*\}/);
+    if (m) parsed = JSON.parse(m[0]);
+    else throw new Error(`IA devolveu não-JSON: ${String(content).slice(0, 200)}`);
   }
-
-  /* Sanitiza shape — qualquer chave faltando vira default seguro */
   return {
     tipo: parsed.tipo || 'indefinido',
     palavras: Array.isArray(parsed.palavras) ? parsed.palavras.filter(Boolean).map(String) : [],

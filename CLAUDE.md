@@ -30,6 +30,15 @@ Quando o Rafa disser "retomar garimpador" / "continuar garimpador" / "abrir gari
 
 ## Regras críticas
 
+- **🔒 ISOLAMENTO TOTAL**: este projeto é EXCLUSIVO do Garimpador de Peças.
+  NÃO misturar com `traffic-manager` (AdManager Cris Costa) nem com
+  `cris-costa-criativos`. Vale pra:
+  - Credenciais (Groq, Gemini, Meta, Neon — cada projeto tem as suas)
+  - Banco de dados (não compartilhar tabelas)
+  - Sessões: sessão do garimpador NÃO escreve em CRITICAL_STATE de outro projeto
+  - Reuso permitido: SÓ ler estrutura/padrões dos outros projetos como
+    REFERÊNCIA pra replicar metodologia (não copiar dados nem chaves).
+  Veto: se qualquer ação cruzar projetos, REJECT mesmo com decisão majoritária do Council.
 - **Foco C10/C14**: prompts da IA, presets de busca, switch default — tudo otimizado pra esse modelo. Não generalizar prematuramente.
 - **Sem login/cadastro**: middleware token é a única auth.
 - **Sem FB Marketplace**: deferido (scraping frágil sem API).

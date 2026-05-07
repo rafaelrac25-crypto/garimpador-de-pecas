@@ -29,6 +29,8 @@ app.use('/api/photo-search', require('./routes/photoSearch'));
 app.use('/api/favorites', require('./routes/favorites'));
 app.use('/api/offers', require('./routes/offers'));
 app.use('/api/galeria', require('./routes/galeria'));
+app.use('/api/alerts', require('./routes/alerts'));
+app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/ai', require('./routes/ai'));
 
 /* Servir SPA do frontend (build). Em dev local sem build, retorna 404 — usa Vite direto na 5173. */
