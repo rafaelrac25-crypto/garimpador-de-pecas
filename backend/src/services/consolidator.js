@@ -11,6 +11,7 @@
 const ML  = require('./mercadoLivre');
 const OLX = require('./olx');
 const WM  = require('./webmotors');
+const modelFilter = require('./modelFilter');
 
 /**
  * @param {Object} args  passado pra cada source.search()
@@ -46,12 +47,19 @@ async function consolidate(args) {
 
   const beforeDedup = allResults.length;
   const deduped = dedupResults(allResults);
-  const ranked = rankByRelevance(deduped, args.q || '');
+  /* Pós-filtro por modelo — descarta peças de outros carros quando busca é C10/C14 */
+  const { kept: filtered, removed: removedByModel } = modelFilter.filter(deduped, args.modelo);
+  const ranked = rankByRelevance(filtered, args.q || '');
 
   return {
     results: ranked,
     sources: sourceStatus,
-    counts: { fetched: beforeDedup, afterDedup: deduped.length, returned: ranked.length },
+    counts: {
+      fetched: beforeDedup,
+      afterDedup: deduped.length,
+      removedByModel,
+      returned: ranked.length,
+    },
   };
 }
 
