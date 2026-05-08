@@ -1,5 +1,60 @@
 # CRITICAL_STATE — Garimpador de Peças
 
+## ✓ CHECKPOINT — 2026-05-07 — PROD LIVE + DOMÍNIO c14docosta + IMG PROXY (commit c36944b)
+
+**Estado atual:**
+- **URL prod:** `https://c14docosta.vercel.app` (renomeado de garimpador-de-pecas)
+- **Sem gate de token** — entra direto. ACCESS_KEY env removida do Vercel.
+- **Postgres Neon ativo** (DATABASE_URL via integration), schema rodado (9 tabelas).
+- **OLX funcionando 100%** com filtro pós-processamento C10/C14 (rejeita Nissan/Honda/VW/Chevrolet moderno; aceita família D10/D20/A10/A20/Bonanza/Veraneio/Opala/Caravan).
+- **Image proxy `/api/img`** — bypass do hotlink protection da OLX. Frontend usa helper `proxyImg()` em Home.jsx + Results.jsx. Testado: imagem JPEG 960×1280 carrega.
+- **OAuth ML conectado** mas **ML bloqueia scraping** mesmo via Cloudflare (anti-bot retorna página "suspicious-traffic"). API oficial /sites/MLB/search retorna 403 mesmo com token user (política 2024).
+- **Switch de modelo na home** mostra C10/C14/D10/A10/A20/C15/**Outro** (input livre pra Opala/Fusca/Maverick/etc).
+
+**Smoke test 2026-05-07 23:40 UTC:**
+- /api/health 200 ✓ (db_url:true, gemini:true, access_key:false)
+- /api/ml/status 200 ✓ (connected:true)
+- /api/vehicle 200 ✓ (C14 do Costa pré-populado)
+- /api/offers/featured?modelo=C10 200 ✓ (resultados OLX)
+- /api/admin/tables 200 ✓ (9 tabelas)
+- /api/search 200 ✓ (filtro C10 ativo, OLX retornando)
+- /api/img?url=<olx> 200 ✓ (imagem real)
+- /api/galeria 200 (vazio — sem IG token)
+
+**ML — caminhos viáveis pra resolver (escolher próxima sessão):**
+- **A) ScraperAPI free** (1000 req/mês — recomendado): cadastro grátis em scraperapi.com, integro como provider de proxy residencial.
+- **B) Browserless.io free** (6h/mês): headless browser remoto.
+- **C) Playwright local no PC do Rafa**: script que coleta on-demand.
+- **D) Aceitar só OLX** (status atual; cobre bem C10/C14).
+
+### Pendências próxima sessão (ordem de impacto)
+1. Decidir caminho do ML (A/B/C/D)
+2. Galeria @c14docosta na home (token IG via Meta Developers ou fotos estáticas curadas)
+3. Carrossel rico de ofertas em destaque (visual)
+4. PWA (manifest.json + ícone — instala como app no celular)
+5. Filtro inteligente generalizado pra outros modelos (Opala/Fusca/etc)
+6. Oficinas em Joinville (mapa Google Places — fase futura)
+7. FB Marketplace (Playwright local — fase futura)
+8. Refinos visuais (Rafael é designer, vai pintar depois)
+
+### Configurado no Vercel (env vars ativas)
+- DATABASE_URL ✓ (Neon integration)
+- GEMINI_API_KEY ✓
+- ML_CLIENT_ID, ML_CLIENT_SECRET, ML_REDIRECT_URI ✓
+- CLOUDFLARE_PROXY_URL, CLOUDFLARE_PROXY_KEY ✓
+- (não setadas: ACCESS_KEY removido propositalmente, GROQ_API_KEY, IG_ACCESS_TOKEN, RESEND_API_KEY, CALLMEBOT_APIKEY, CRON_SECRET)
+
+### Cloudflare Worker
+- URL: `https://jolly-sky-64e9.rafaelrac25.workers.dev`
+- Allowlist corrigida (lista.mercadolivre.com.br com V de "livre")
+
+### Banco
+- Tabelas: searches, favorites, alerts, price_alerts, notifications, error_logs, vehicle, maintenance_logs, ml_tokens
+- Vehicle row id=1 pré-populado: "C14 do Costa", Chevrolet C14, ano 1964
+- ml_tokens.refresh_token agora nullable (ML não retornou refresh_token na primeira autorização)
+
+---
+
 ## ✓ CHECKPOINT — 2026-05-07 — PROXY CF + OAUTH ML LIGADOS (commit 46d5048)
 
 **O que mudou nesta sessão:**
