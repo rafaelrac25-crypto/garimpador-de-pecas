@@ -5,12 +5,19 @@
  *
  * Auto-detect: se CLOUDFLARE_PROXY_URL + CLOUDFLARE_PROXY_KEY setadas, usa.
  * Senão, fetch direto (modo dev/local).
+ *
+ * getViaScraperApi: caminho alternativo via ScraperAPI (proxy residencial).
+ * Necessário pro ML — anti-bot do ML detecta o Worker CF como suspicious-traffic.
  */
 
 const axios = require('axios');
 
 function shouldProxy() {
   return !!(process.env.CLOUDFLARE_PROXY_URL && process.env.CLOUDFLARE_PROXY_KEY);
+}
+
+function shouldScraperApi() {
+  return !!process.env.SCRAPERAPI_KEY;
 }
 
 /**
@@ -41,4 +48,36 @@ async function get(url, opts = {}) {
   });
 }
 
-module.exports = { get, shouldProxy };
+/**
+ * Versão via ScraperAPI (proxy residencial brasileiro).
+ * Usar quando o site bloqueia o Cloudflare Worker (caso do Mercado Livre).
+ *
+ * Free tier: 1000 credits/mês; sem render JS = 1 credit por request.
+ * country_code=br força IP nacional (ML é mais permissivo com IP brasileiro).
+ *
+ * Fallback: se SCRAPERAPI_KEY não setada, cai pro `get` (Worker CF ou direto).
+ */
+async function getViaScraperApi(url, opts = {}) {
+  if (!shouldScraperApi()) {
+    return get(url, opts);
+  }
+  let finalUrl = url;
+  if (opts.params) {
+    const sp = new URLSearchParams(opts.params).toString();
+    finalUrl += (finalUrl.includes('?') ? '&' : '?') + sp;
+  }
+  const apiUrl = 'https://api.scraperapi.com/'
+    + `?api_key=${process.env.SCRAPERAPI_KEY}`
+    + `&url=${encodeURIComponent(finalUrl)}`
+    + `&country_code=br`;
+  return axios.get(apiUrl, {
+    timeout: opts.timeout || 30000,
+    responseType: opts.responseType || 'text',
+    headers: {
+      'Accept': opts.headers?.Accept || 'text/html,application/xhtml+xml',
+    },
+    transformResponse: opts.responseType === 'arraybuffer' ? undefined : [(d) => d],
+  });
+}
+
+module.exports = { get, getViaScraperApi, shouldProxy, shouldScraperApi };

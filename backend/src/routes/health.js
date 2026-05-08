@@ -18,6 +18,7 @@ router.get('/', (req, res) => {
       cron_secret:   !!process.env.CRON_SECRET,
       resend:        !!process.env.RESEND_API_KEY,
       callmebot_wa:  !!process.env.CALLMEBOT_APIKEY,
+      scraperapi:    !!process.env.SCRAPERAPI_KEY,
     },
   });
 });

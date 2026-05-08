@@ -7,8 +7,9 @@
  *
  * URL: https://lista.mercadolivre.com.br/<termo-com-hifens>
  *
- * Exige Cloudflare Worker proxy ativo (CLOUDFLARE_PROXY_URL) — IPs do
- * datacenter Vercel são bloqueados pelo anti-bot do ML.
+ * Exige ScraperAPI (SCRAPERAPI_KEY) — Cloudflare Worker é detectado pelo
+ * anti-bot do ML como "suspicious-traffic". ScraperAPI usa IP residencial
+ * brasileiro e passa. Fallback: Worker CF se ScraperAPI ausente.
  */
 
 const cheerio = require('cheerio');
@@ -42,8 +43,8 @@ async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
 
   let html;
   try {
-    const resp = await proxyFetch.get(url, {
-      timeout: TIMEOUT,
+    const resp = await proxyFetch.getViaScraperApi(url, {
+      timeout: 30000,
       headers: {
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'pt-BR,pt;q=0.9',
