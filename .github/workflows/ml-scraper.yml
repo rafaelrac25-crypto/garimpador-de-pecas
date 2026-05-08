@@ -1,11 +1,19 @@
 name: ML Scraper
 
 on:
-  # Cron a cada 2h. UTC. Repo público = minutos ilimitados.
+  # Cron horário. 1 termo por run (anti-bot ML detecta padrão se múltiplos).
   schedule:
-    - cron: '0 */2 * * *'
-  # Trigger manual via UI do GitHub OU API (botão "Atualizar agora" no app)
-  workflow_dispatch: {}
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      termo:
+        description: 'Termo específico (vazio = rotação automática)'
+        required: false
+        type: string
+      modelo:
+        description: 'Modelo (C10, C14, etc)'
+        required: false
+        type: string
 
 # Evita 2 runs simultâneos pisando no mesmo cache
 concurrency:
@@ -15,14 +23,16 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install deps
         working-directory: scripts
@@ -38,4 +48,6 @@ jobs:
         working-directory: scripts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ML_TERMO: ${{ inputs.termo }}
+          ML_MODELO: ${{ inputs.modelo }}
         run: node scrape-ml.js

@@ -167,3 +167,17 @@ CREATE TABLE IF NOT EXISTS ml_scrape_status (
 );
 
 INSERT INTO ml_scrape_status (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Termos aprendidos do uso real. Cada busca do usuário que dá miss no
+-- ML registra aqui. Cron rotativo do scraper mescla esses com os fixos.
+CREATE TABLE IF NOT EXISTS ml_terms_learned (
+  id SERIAL PRIMARY KEY,
+  q TEXT NOT NULL UNIQUE,
+  modelo TEXT,
+  hits INTEGER DEFAULT 1,
+  active INTEGER DEFAULT 1,
+  last_hit_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_terms_active ON ml_terms_learned(active, hits DESC);

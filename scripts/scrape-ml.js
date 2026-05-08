@@ -1,16 +1,21 @@
 /**
  * Scraper Mercado Livre via Playwright. Roda no GitHub Actions
- * (cron 2h + manual dispatch). Popula tabela ml_offers_cache no Neon.
+ * (cron horário + manual dispatch). Popula tabela ml_offers_cache no Neon.
  *
- * Por que Playwright em vez de scraping HTTP simples:
- *   ML bloqueia IPs de datacenter (Vercel/CF Worker = "suspicious-traffic").
- *   GitHub Actions tem IP de runner Azure, mas com Chromium real + headers
- *   de browser, passa o anti-bot na maioria dos casos.
+ * Estratégia "1 termo por run":
+ *   ML detecta padrão de buscas seguidas no mesmo run/IP. Solução:
+ *   cada execução do workflow processa apenas 1 termo, pega novo IP do
+ *   pool GitHub Actions, browser fresh. 24 runs/dia = 24 termos cobertos.
+ *   Cron a cada 1h: índice = (epoch_hours) % len(TERMOS+aprendidos).
  *
- * Variáveis de ambiente (setadas pelo workflow):
+ * Modos:
+ *   - Sem args: pega 1 termo pela rotação automática
+ *   - --termo "alternador c10" --modelo C10: termo específico (on-demand)
+ *
+ * Variáveis de ambiente:
  *   DATABASE_URL — Neon Postgres (mesma do app)
- *
- * Uso local: DATABASE_URL=... node scripts/scrape-ml.js
+ *   ML_TERMO     — alternativa a --termo (workflow_dispatch passa via env)
+ *   ML_MODELO    — alternativa a --modelo
  */
 
 const { chromium } = require('playwright-extra');
@@ -18,9 +23,8 @@ const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
 const { neon } = require('@neondatabase/serverless');
 
-/* Termos pré-definidos pra C10/C14. Editável — adicionar/remover aqui.
-   Cada termo gera 1 chamada ML; resultado = ~30-50 anúncios por termo. */
-const TERMOS = [
+/* Termos pré-definidos pra C10/C14. Tabela ml_terms_learned é mesclada em runtime. */
+const TERMOS_BASE = [
   { q: 'carburador c10',           modelo: 'C10' },
   { q: 'kit motor c10',            modelo: 'C10' },
   { q: 'para choque c10',          modelo: 'C10' },
@@ -41,12 +45,56 @@ const TERMOS = [
 const PER_TERMO_LIMIT = 30;
 const NAV_TIMEOUT = 25000;
 
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const out = { termo: process.env.ML_TERMO || null, modelo: process.env.ML_MODELO || null };
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--termo' && args[i + 1]) out.termo = args[++i];
+    else if (args[i] === '--modelo' && args[i + 1]) out.modelo = args[++i];
+  }
+  return out;
+}
+
 function slugify(s) {
   return String(s || '')
     .toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+async function pickRotationTermo(sql) {
+  /* Busca termos aprendidos do uso real (tabela ml_terms_learned).
+     Mescla com base; rotação por hora UTC pra cobertura uniforme. */
+  let learned = [];
+  try {
+    const r = await sql`SELECT q, modelo FROM ml_terms_learned WHERE active = 1 ORDER BY hits DESC LIMIT 50`;
+    learned = r || [];
+  } catch { /* tabela ainda não existe — primeira execução */ }
+
+  const pool = [...TERMOS_BASE, ...learned.map(r => ({ q: r.q, modelo: r.modelo }))];
+  const idx = Math.floor(Date.now() / 3600000) % pool.length;  /* hora UTC */
+  return pool[idx];
+}
+
+async function warmup(page) {
+  /* Acessa home + faz "scroll humano" pra desarmar fingerprint inicial. */
+  try {
+    await page.goto('https://www.mercadolivre.com.br/', {
+      waitUntil: 'domcontentloaded', timeout: 20000,
+    });
+    await page.waitForTimeout(2500 + Math.floor(Math.random() * 1500));
+    /* Scroll suave simulando leitura humana */
+    await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => window.scrollBy({ top: 600, behavior: 'smooth' }));
+    await page.waitForTimeout(1000);
+    console.log('[ml] warmup ok');
+    return true;
+  } catch (e) {
+    console.warn('[ml] warmup falhou:', e.message);
+    return false;
+  }
 }
 
 async function scrapeTerm(page, termo) {
@@ -56,8 +104,11 @@ async function scrapeTerm(page, termo) {
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
     await page.waitForSelector('li.ui-search-layout__item, .poly-card, .ui-search-result', {
-      timeout: 8000,
+      timeout: 12000,
     }).catch(() => null);
+    /* Pequeno scroll pra forçar lazy-load das imagens */
+    await page.evaluate(() => window.scrollBy({ top: 800, behavior: 'auto' })).catch(() => {});
+    await page.waitForTimeout(1500);
   } catch (err) {
     console.warn(`[ml] navegação falhou em "${termo.q}":`, err.message);
     return [];
@@ -120,71 +171,70 @@ async function main() {
   }
   const sql = neon(process.env.DATABASE_URL);
 
+  /* Decide o termo desta execução */
+  const args = parseArgs();
+  let termo;
+  if (args.termo) {
+    termo = { q: args.termo, modelo: args.modelo || null };
+    console.log(`[ml] modo on-demand: "${termo.q}"`);
+  } else {
+    termo = await pickRotationTermo(sql);
+    console.log(`[ml] modo rotação: "${termo.q}"`);
+  }
+
   const browser = await chromium.launch({
     headless: true,
     args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
   });
+  /* Rotaciona viewport e UA pra reduzir fingerprint estável */
+  const uas = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+  ];
+  const ua = uas[Math.floor(Math.random() * uas.length)];
   const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+    userAgent: ua,
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
-    viewport: { width: 1366, height: 768 },
+    viewport: { width: 1280 + Math.floor(Math.random() * 200), height: 720 + Math.floor(Math.random() * 100) },
   });
   const page = await context.newPage();
 
-  /* Warmup: visita home do ML primeiro pra setar cookies de sessão.
-     Sem isso, ML detecta a 2ª request como "sem fingerprint" e bloqueia. */
-  try {
-    await page.goto('https://www.mercadolivre.com.br/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await page.waitForTimeout(3000);
-    console.log('[ml] warmup ok');
-  } catch (e) {
-    console.warn('[ml] warmup falhou:', e.message);
-  }
-
   let totalCount = 0;
-  let termosOk = 0;
-  let lastError = null;
+  let ok = false;
+  let errMsg = null;
 
   try {
-    for (const termo of TERMOS) {
-      try {
-        const items = await scrapeTerm(page, termo);
-        if (items.length === 0) {
-          lastError = `sem anúncios em "${termo.q}"`;
-          continue;
-        }
-        termosOk++;
+    await warmup(page);
+    /* Throttle entre warmup e busca real */
+    await page.waitForTimeout(3000 + Math.floor(Math.random() * 2000));
 
-        /* Upsert via parametrização — Neon serverless aceita batches.
-           ON CONFLICT atualiza preço/título caso anúncio mude. */
-        for (const it of items) {
-          await sql`
-            INSERT INTO ml_offers_cache (
-              external_id, termo, modelo, title, price, url, thumb_url, free_shipping, scraped_at
-            ) VALUES (
-              ${it.externalId}, ${it.termo}, ${it.modelo}, ${it.title},
-              ${it.price}, ${it.url}, ${it.thumbUrl}, ${it.freeShipping ? 1 : 0}, NOW()
-            )
-            ON CONFLICT (external_id) DO UPDATE SET
-              title = EXCLUDED.title,
-              price = EXCLUDED.price,
-              thumb_url = EXCLUDED.thumb_url,
-              free_shipping = EXCLUDED.free_shipping,
-              scraped_at = NOW()
-          `;
-          totalCount++;
-        }
-
-        /* Throttle: 8s entre termos + jitter aleatório. ML detecta padrão regular. */
-        await page.waitForTimeout(8000 + Math.floor(Math.random() * 3000));
-      } catch (err) {
-        lastError = `${termo.q}: ${err.message}`;
-        console.warn(`[ml] erro em "${termo.q}":`, err.message);
+    const items = await scrapeTerm(page, termo);
+    if (items.length > 0) {
+      ok = true;
+      for (const it of items) {
+        await sql`
+          INSERT INTO ml_offers_cache (
+            external_id, termo, modelo, title, price, url, thumb_url, free_shipping, scraped_at
+          ) VALUES (
+            ${it.externalId}, ${it.termo}, ${it.modelo}, ${it.title},
+            ${it.price}, ${it.url}, ${it.thumbUrl}, ${it.freeShipping ? 1 : 0}, NOW()
+          )
+          ON CONFLICT (external_id) DO UPDATE SET
+            title = EXCLUDED.title,
+            price = EXCLUDED.price,
+            thumb_url = EXCLUDED.thumb_url,
+            free_shipping = EXCLUDED.free_shipping,
+            scraped_at = NOW()
+        `;
+        totalCount++;
       }
+    } else {
+      errMsg = `sem anúncios em "${termo.q}"`;
     }
 
-    /* Limpa registros velhos (>14 dias) — anúncio sumiu da listagem. */
+    /* Limpa registros velhos (>14 dias) */
     await sql`DELETE FROM ml_offers_cache WHERE scraped_at < NOW() - INTERVAL '14 days'`;
 
     /* Atualiza status */
@@ -192,21 +242,18 @@ async function main() {
       UPDATE ml_scrape_status SET
         last_run_at = NOW(),
         last_run_count = ${totalCount},
-        last_run_status = ${termosOk > 0 ? 'ok' : 'failed'},
-        last_run_termos = ${termosOk},
-        last_error = ${lastError}
+        last_run_status = ${ok ? 'ok' : 'failed'},
+        last_run_termos = ${ok ? 1 : 0},
+        last_error = ${errMsg}
       WHERE id = 1
     `;
 
-    console.log(`[ml] FIM. Termos OK: ${termosOk}/${TERMOS.length}. Anúncios: ${totalCount}.`);
+    console.log(`[ml] FIM. Termo "${termo.q}" ${ok ? 'OK' : 'FAIL'}. Anúncios: ${totalCount}.`);
   } finally {
     await browser.close();
   }
 
-  if (termosOk === 0) {
-    console.error('[ml] nenhum termo retornou — anti-bot pode estar ativo');
-    process.exit(1);
-  }
+  if (!ok) process.exit(1);
 }
 
 main().catch((err) => {

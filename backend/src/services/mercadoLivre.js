@@ -88,11 +88,22 @@ async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
     },
   }));
 
+  /* Aprendizado: termo que dá miss vira candidato pro cron rotativo.
+     Cresce cobertura do cache automaticamente conforme uso real. */
+  if (results.length === 0) {
+    db.query(
+      `INSERT INTO ml_terms_learned (q, modelo, hits, active, last_hit_at)
+       VALUES (?, ?, 1, 1, NOW())
+       ON CONFLICT (q) DO UPDATE SET hits = ml_terms_learned.hits + 1, last_hit_at = NOW()`,
+      [fullQ.toLowerCase().trim(), modelo || null]
+    ).catch(err => console.warn('[mercadoLivre] aprendizado falhou:', err.message));
+  }
+
   return {
     source: 'mercadolivre',
     results,
     note: results.length === 0
-      ? 'cache vazio pra esta busca — rode o scraper ou aguarde próximo cron (2h)'
+      ? 'cache vazio pra esta busca — termo registrado pra próximo cron (1h)'
       : null,
   };
 }
