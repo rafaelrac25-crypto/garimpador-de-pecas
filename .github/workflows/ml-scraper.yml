@@ -28,7 +28,7 @@ jobs:
         working-directory: scripts
         run: |
           npm init -y > /dev/null
-          npm install --silent playwright @neondatabase/serverless
+          npm install --silent playwright playwright-extra puppeteer-extra-plugin-stealth @neondatabase/serverless
 
       - name: Install Chromium
         working-directory: scripts

@@ -13,7 +13,9 @@
  * Uso local: DATABASE_URL=... node scripts/scrape-ml.js
  */
 
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+const stealth = require('puppeteer-extra-plugin-stealth')();
+chromium.use(stealth);
 const { neon } = require('@neondatabase/serverless');
 
 /* Termos pré-definidos pra C10/C14. Editável — adicionar/remover aqui.
@@ -130,7 +132,16 @@ async function main() {
   });
   const page = await context.newPage();
 
-  const startedAt = new Date().toISOString();
+  /* Warmup: visita home do ML primeiro pra setar cookies de sessão.
+     Sem isso, ML detecta a 2ª request como "sem fingerprint" e bloqueia. */
+  try {
+    await page.goto('https://www.mercadolivre.com.br/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(3000);
+    console.log('[ml] warmup ok');
+  } catch (e) {
+    console.warn('[ml] warmup falhou:', e.message);
+  }
+
   let totalCount = 0;
   let termosOk = 0;
   let lastError = null;
@@ -165,8 +176,8 @@ async function main() {
           totalCount++;
         }
 
-        /* Throttle: 2s entre termos. ML detecta requests rápidos demais. */
-        await page.waitForTimeout(2000);
+        /* Throttle: 8s entre termos + jitter aleatório. ML detecta padrão regular. */
+        await page.waitForTimeout(8000 + Math.floor(Math.random() * 3000));
       } catch (err) {
         lastError = `${termo.q}: ${err.message}`;
         console.warn(`[ml] erro em "${termo.q}":`, err.message);
