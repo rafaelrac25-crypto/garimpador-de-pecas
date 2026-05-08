@@ -78,18 +78,23 @@ async function pickRotationTermo(sql) {
 }
 
 async function warmup(page) {
-  /* Acessa home + faz "scroll humano" pra desarmar fingerprint inicial. */
   try {
-    await page.goto('https://www.mercadolivre.com.br/', {
+    const resp = await page.goto('https://www.mercadolivre.com.br/', {
       waitUntil: 'domcontentloaded', timeout: 20000,
     });
+    const finalUrl = page.url();
+    const finalTitle = await page.title().catch(() => '?');
+    console.log(`[ml] warmup status=${resp?.status()} url=${finalUrl} title="${finalTitle}"`);
+    /* Detecta redirect pra versão global: se url não tem .com.br, ML
+       achou que somos não-BR. Cookies BR no context devem ter prevenido. */
+    if (!finalUrl.includes('.com.br')) {
+      console.warn('[ml] WARMUP redirecionou pra versão global — IP não-BR');
+    }
     await page.waitForTimeout(2500 + Math.floor(Math.random() * 1500));
-    /* Scroll suave simulando leitura humana */
     await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await page.waitForTimeout(1500);
     await page.evaluate(() => window.scrollBy({ top: 600, behavior: 'smooth' }));
     await page.waitForTimeout(1000);
-    console.log('[ml] warmup ok');
     return true;
   } catch (e) {
     console.warn('[ml] warmup falhou:', e.message);
@@ -222,7 +227,20 @@ async function main() {
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
     viewport: { width: 1280 + Math.floor(Math.random() * 200), height: 720 + Math.floor(Math.random() * 100) },
+    extraHTTPHeaders: {
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.5',
+    },
+    geolocation: { latitude: -23.5505, longitude: -46.6333 },  /* São Paulo */
+    permissions: ['geolocation'],
   });
+
+  /* Pre-seta cookies BR pra ML não redirecionar pra versão global.
+     Esses são os cookies que site BR seta na primeira visita real. */
+  await context.addCookies([
+    { name: '_d2id', value: 'br', domain: '.mercadolivre.com.br', path: '/' },
+    { name: 'c_ui-navigation', value: '1', domain: '.mercadolivre.com.br', path: '/' },
+  ]);
+
   const page = await context.newPage();
 
   let totalCount = 0;
