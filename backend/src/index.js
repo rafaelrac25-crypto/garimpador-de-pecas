@@ -36,6 +36,8 @@ app.use(async (req, res, next) => { await ensureSchema(); next(); });
 app.use('/api/health', require('./routes/health'));
 app.use('/api/cron', require('./routes/cron'));
 app.use('/api/admin', require('./routes/admin'));
+/* Proxy de imagens — sem auth, public, com allowlist de hosts */
+app.use('/api/img', require('./routes/imgProxy'));
 /* Callback OAuth Mercado Livre — sem auth do app (ML é quem redireciona) */
 app.use('/api/ml-callback', require('./routes/mlCallback'));
 

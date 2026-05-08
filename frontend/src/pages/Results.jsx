@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import Icon from '../components/Icon';
 import StatusDot from '../components/StatusDot';
+import { proxyImg } from '../utils/imgProxy';
 
 export default function Results() {
   const [params] = useSearchParams();
@@ -79,7 +80,8 @@ export default function Results() {
                className="gar-card"
                style={{ display: 'flex', gap: '12px', overflow: 'hidden', padding: '0' }}>
               {it.thumbUrl ? (
-                <img src={it.thumbUrl} alt="" loading="lazy"
+                <img src={proxyImg(it.thumbUrl)} alt="" loading="lazy"
+                     onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }}
                      style={{ width: '110px', height: '110px', objectFit: 'cover', flexShrink: 0, background: 'var(--c-surface)' }} />
               ) : (
                 <div style={{ width: '110px', height: '110px', flexShrink: 0, background: 'var(--c-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--c-text-4)' }}>

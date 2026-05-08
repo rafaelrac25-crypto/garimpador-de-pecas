@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import Icon from '../components/Icon';
 import { BUSCAS_RAPIDAS, MODELOS } from '../data/c10-c14-pecas';
+import { proxyImg } from '../utils/imgProxy';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -114,7 +115,8 @@ export default function Home() {
                  style={{ overflow: 'hidden', display: 'block' }}>
                 {it.thumbUrl && (
                   <div style={{ width: '100%', aspectRatio: '1/1', overflow: 'hidden', background: 'var(--c-surface)' }}>
-                    <img src={it.thumbUrl} alt={it.title} loading="lazy"
+                    <img src={proxyImg(it.thumbUrl)} alt={it.title} loading="lazy"
+                         onError={(e) => { e.target.style.display = 'none'; }}
                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   </div>
                 )}
