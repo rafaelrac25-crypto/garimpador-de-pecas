@@ -216,3 +216,117 @@ Pedida pelo Rafa em 2026-05-07. Sessão de galeria com fotos do Instagram
 **Frontend:** PENDENTE — Fase visual. Sugestão: grid 3 colunas mobile,
 6 desktop, lazy loading. Lightbox ao clicar. Carrossel de "destaques"
 no topo da home.
+
+---
+
+## ✓ CHECKPOINT — 2026-05-08 — ML VIA SCRAPER PLAYWRIGHT EM GITHUB ACTIONS (commit 8bf1097)
+
+**Contexto:** ML continua bloqueado no Vercel datacenter; ScraperAPI free não cobre ML (Protected Domain → premium pago). Decisão: caminho 100% free + sustentável.
+
+**Solução implementada:**
+- Robô Playwright roda em runner GitHub Actions (repo público = minutos ilimitados)
+- Cron a cada 2h + dispatch manual via botão no app
+- 15 termos pré-definidos C10/C14 (carburador, kit motor, para-choque, caçamba, banco, farol, retrovisor, volante, emblema, friso, tanque, caixa câmbio)
+- Popula tabela `ml_offers_cache` no Neon (upsert + cleanup >14 dias)
+- Backend lê do cache via tokens LIKE no título; frontend mostra count + "há Xh"
+
+**Arquivos criados/modificados:**
+- `scripts/scrape-ml.js` — Playwright scraper (Chromium headless, throttle 2s/termo)
+- `.github/workflows/ml-scraper.yml` — cron + manual dispatch
+- `backend/src/db/schema-postgres.sql` — tabelas `ml_offers_cache` + `ml_scrape_status`
+- `backend/src/services/mercadoLivre.js` — query do cache em vez de scraping live
+- `backend/src/routes/admin.js` — `/scrape-ml/status` + `/scrape-ml/trigger`
+- `frontend/src/App.jsx` — chip "ML · 245 ofertas · há 1h" com botão atualizar
+
+**⚠️ AÇÕES PENDENTES DO RAFA:**
+1. **GitHub Secrets** (https://github.com/rafaelrac25-crypto/garimpador-de-pecas/settings/secrets/actions):
+   - `DATABASE_URL` = mesmo valor que está no Vercel
+2. **PAT GitHub fine-grained** (https://github.com/settings/tokens?type=beta):
+   - Repository: garimpador-de-pecas
+   - Permissions: Actions Read and write
+   - Copiar token gerado
+3. **Vercel env** (Settings → Environment Variables):
+   - `GITHUB_PAT` = token gerado no passo 2
+   - Redeploy após salvar
+
+**Validação:**
+- `/api/admin/init-schema` retornou `{ok:true, applied:18}` — tabelas criadas no Neon
+- Schema rodado em 2026-05-08T12:39 UTC
+- Build frontend ok (240KB), commit pushed: `8bf1097`
+
+**Custos:** ZERO. GitHub Actions repo público = unlimited; Neon free tier; Vercel free.
+
+**Termos editáveis em:** `scripts/scrape-ml.js` linha 19+ (array `TERMOS`).
+
+**Limites práticos:**
+- Cron mínimo do GitHub: 5 min (configurado em 2h pra não saturar)
+- Botão manual: ~30-45s pra completar (workflow_dispatch via API)
+- Anti-bot ML: Playwright real-browser passa na maioria dos casos. Se anti-bot evoluir, plano B: rotacionar User-Agent ou usar `playwright-extra` com stealth plugin.
+
+
+---
+
+## ✓ CHECKPOINT — 2026-05-08 — ML BLOQUEADO EM IP DATACENTER, CAMINHO DEFINIDO É BOOTSTRAP MANUAL DE SESSÃO
+
+**Diagnóstico final do bloqueio ML:**
+- API oficial: 403 mesmo com OAuth (política 2024) ✗
+- Cloudflare Worker: detectado como suspicious-traffic ✗
+- ScraperAPI free: ML é "Protected Domain" → exige premium ($49/mês) ✗
+- GitHub Actions Playwright + stealth + warmup BR: home BR carrega, mas página de listagem (search) redireciona pra "Mercado Libre" (espanhol) com login wall ✗
+- DuckDuckGo HTML scraping: snippets genéricos sem preço/foto ✗
+- Cloudflare Browser Rendering: Workers Paid ($5/mês mínimo) ✗
+- **Política ML confirmada**: search anônimo de IP datacenter exige login. Home pública OK, busca não.
+
+**Caminho escolhido (commit 32fac20):**
+- Conta ML descartável criada pelo Rafa (NÃO usar conta pessoal — risco de ban)
+- Script `scripts/bootstrap-ml-session.js`: roda 1x no PC do Rafa em modo headed, ele loga manual (IP residencial Joinville aceita), salva storage_state em `ml_session` (single-row, id=1)
+- GitHub Actions cron horário reusa a sessão. Se ML invalidar (mudar de IP datacenter), Rafa refaz bootstrap manualmente
+
+**Arquitetura do scraper atual:**
+- 1 termo por run (não 15) — anti-bot ML detecta padrão de buscas seguidas
+- Cron horário (`17 * * * *`)  → 24 termos cobertos por dia em rotação
+- workflow_dispatch aceita inputs `termo`/`modelo` pra busca on-demand
+- Tabela `ml_terms_learned`: cada miss do user adiciona termo à rotação
+- Stealth plugin + cookies BR + UA randomizado + warmup com home
+
+**Estado das infra:**
+- Schema atual: 27 statements aplicados no Neon (inclui `ml_offers_cache`, `ml_scrape_status`, `ml_terms_learned`, `ml_session`)
+- Cache atual: 30 anúncios (do run que pegou 1 termo de OLX antes do bloqueio total)
+- OLX continua 100% funcional — não dependente desse caminho ML
+- Frontend chip "ML · 30 ofertas · há Xh" + botão atualizar manual (precisa GITHUB_PAT no Vercel pra disparar)
+
+**⚠️ O QUE FALTA — AÇÃO DO RAFA (próxima sessão):**
+
+1. **Bootstrap manual da sessão ML** (caminho documentado em /CRITICAL_STATE):
+   - Instalar Node 20+ no Windows (se ainda não tem)
+   - `git pull`
+   - Pegar DATABASE_URL do Neon (https://console.neon.tech → projeto neon-aqua-flower → Connect)
+   - Criar `scripts/.env` com `DATABASE_URL=postgresql://...`
+   - `cd scripts && npm install playwright @neondatabase/serverless dotenv`
+   - `npx playwright install chromium`
+   - `node bootstrap-ml-session.js` → janela abre, Rafa loga manual, espera "✅ Sessão salva!"
+
+2. **Rodar workflow** após bootstrap: github.com/rafaelrac25-crypto/garimpador-de-pecas/actions/workflows/ml-scraper.yml → Run workflow
+
+3. **Validar resultado**: se sessão for aceita pelo ML mesmo de IP datacenter, ML passa a popular cache. Se ML invalidar a sessão (rejeição vinda de IP novo), pivotamos pra plano A (só OLX).
+
+4. **Pendentes menores (depois do ML estabilizar):**
+   - Criar PAT GitHub fine-grained (scope Actions Read/Write) + setar `GITHUB_PAT` no Vercel → habilita botão "Atualizar agora" do app
+   - Configurar Task Scheduler nos PCs Rafa+irmão pra scraping local complementar (opcional, IP residencial = robusto)
+   - Alerta de quota: notificar quando atingir N buscas/dia (regra que Rafa pediu)
+
+5. **Pendências do projeto antes do ML:**
+   - Galeria @c14docosta na home (precisa IG_ACCESS_TOKEN)
+   - Carrossel rico de ofertas em destaque
+   - PWA (manifest + ícone)
+   - Filtro generalizado pra outros modelos
+
+**Secrets configurados:**
+- GitHub: `DATABASE_URL` ✓, `ML_USER` ✓, `ML_PASSWORD` ✓
+- Vercel: DATABASE_URL ✓, SCRAPERAPI_KEY ✓ (inerte — free não cobre ML)
+- Falta no Vercel: `GITHUB_PAT` (pra botão manual do app)
+
+**Conta ML descartável:** Rafa criou em 2026-05-08, email separado, sem 2FA.
+
+**Custos:** ZERO (GitHub Actions repo público unlimited, Neon free, Vercel free, ScraperAPI free).
+
