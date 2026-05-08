@@ -136,3 +136,34 @@ ALTER TABLE ml_tokens ALTER COLUMN refresh_token DROP NOT NULL;
 INSERT INTO vehicle (id, apelido, modelo, ano, combustivel)
 VALUES (1, 'C14 do Costa', 'Chevrolet C14', 1964, 'gasolina')
 ON CONFLICT (id) DO NOTHING;
+
+-- Cache de ofertas Mercado Livre. Populado por scraper Playwright em
+-- GitHub Actions (cron 2h + manual dispatch). Frontend lê daqui em vez
+-- de fazer scraping live (ML bloqueia datacenter Vercel).
+CREATE TABLE IF NOT EXISTS ml_offers_cache (
+  id SERIAL PRIMARY KEY,
+  external_id TEXT NOT NULL UNIQUE,
+  termo TEXT NOT NULL,
+  modelo TEXT,
+  title TEXT NOT NULL,
+  price REAL,
+  url TEXT NOT NULL,
+  thumb_url TEXT,
+  free_shipping INTEGER DEFAULT 0,
+  scraped_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_cache_termo ON ml_offers_cache(termo, scraped_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ml_cache_recent ON ml_offers_cache(scraped_at DESC);
+
+-- Status do scraper (single-row, id=1)
+CREATE TABLE IF NOT EXISTS ml_scrape_status (
+  id INTEGER PRIMARY KEY,
+  last_run_at TIMESTAMPTZ,
+  last_run_count INTEGER DEFAULT 0,
+  last_run_status TEXT,
+  last_run_termos INTEGER DEFAULT 0,
+  last_error TEXT
+);
+
+INSERT INTO ml_scrape_status (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

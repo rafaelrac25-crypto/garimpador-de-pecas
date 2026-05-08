@@ -7,33 +7,64 @@ import Home from './pages/Home';
 import Results from './pages/Results';
 import Vehicle from './pages/Vehicle';
 
+function tempoRelativo(iso) {
+  if (!iso) return 'nunca';
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1)   return 'agora';
+  if (min < 60)  return `há ${min}min`;
+  if (min < 1440) return `há ${Math.round(min / 60)}h`;
+  return `há ${Math.round(min / 1440)}d`;
+}
+
 function MLChip() {
-  const [status, setStatus] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    api.get('/api/ml/status').then(r => { if (alive) setStatus(r.data); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  const connected = status?.connected;
-  const onClick = () => {
-    /* Sem ACCESS_KEY no backend, o /api/ml/start aceita sem ?key= */
-    const k = localStorage.getItem('garimpador_access_key');
-    window.location.href = k ? `/api/ml/start?key=${encodeURIComponent(k)}` : '/api/ml/start';
-  };
-  if (!status) return null;
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  async function load() {
+    try {
+      const r = await api.get('/api/admin/scrape-ml/status');
+      setData(r.data);
+    } catch { /* ignora */ }
+  }
+  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+
+  async function atualizar() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api.post('/api/admin/scrape-ml/trigger');
+      if (r.data?.ok) {
+        /* Espera ~45s o workflow popular cache, daí recarrega status */
+        setTimeout(load, 45000);
+      } else {
+        alert(r.data?.error || 'Falha ao disparar atualização');
+      }
+    } catch (e) {
+      alert(e.response?.data?.error || e.message);
+    } finally {
+      setTimeout(() => setBusy(false), 5000);
+    }
+  }
+
+  if (!data) return null;
+  const count = data.cache_count || 0;
+  const lastAt = data.status?.last_run_at;
+  const ok = data.status?.last_run_status === 'ok';
+
   return (
     <button
-      onClick={onClick}
-      title={connected ? `ML conectado (expira em ${status.expires_in_min} min)` : 'Conectar Mercado Livre'}
+      onClick={atualizar}
+      disabled={busy}
+      title={`${count} ofertas em cache · última sync ${tempoRelativo(lastAt)}. Clique pra atualizar agora.`}
       className="gar-chip"
       style={{
         fontSize: '11.5px',
-        background: connected ? 'var(--c-success-soft, #e6f5e6)' : 'var(--c-bowtie-soft, #f5e0dd)',
-        color: connected ? 'var(--c-success, #2d7a3a)' : 'var(--c-bowtie, #B8362A)',
+        background: ok && count > 0 ? 'var(--c-success-soft, #e6f5e6)' : 'var(--c-warn-soft, #fdf2d8)',
+        color: ok && count > 0 ? 'var(--c-success, #2d7a3a)' : 'var(--c-warn, #8a6300)',
         border: 'none',
+        opacity: busy ? 0.6 : 1,
       }}
     >
-      ML {connected ? 'on' : 'off'}
+      ML · {count} {busy ? '⟳' : ''} <span style={{ opacity: 0.7 }}>{tempoRelativo(lastAt)}</span>
     </button>
   );
 }

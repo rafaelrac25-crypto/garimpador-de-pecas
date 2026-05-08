@@ -1,113 +1,100 @@
 /**
- * Scraping da listagem pública do Mercado Livre.
+ * Busca Mercado Livre lendo cache populado por scraper Playwright em
+ * GitHub Actions (cron 2h + dispatch manual via /api/admin/scrape-ml/trigger).
  *
- * Por que NÃO usamos a API oficial:
- *   ML mudou política em 2024 — /sites/MLB/search retorna 403 mesmo com
- *   OAuth user válido (testado). Restou-nos a página HTML pública.
+ * Por que não scraping live:
+ *   ML bloqueia datacenter Vercel + Cloudflare Worker (suspicious-traffic).
+ *   ScraperAPI free não cobre ML (Protected Domain → premium pago).
+ *   Caminho free + sustentável: Playwright em runner GitHub (IP residencial-ish)
+ *   popula tabela ml_offers_cache; backend lê daqui.
  *
- * URL: https://lista.mercadolivre.com.br/<termo-com-hifens>
- *
- * Status: ML é "Protected Domain" no ScraperAPI — só plano pago consegue
- * passar (premium=true). ScraperAPI free tier retorna 500. Cloudflare Worker
- * também é detectado (suspicious-traffic). Solução pendente: Browserless,
- * Playwright local, ou plano pago ScraperAPI Hobby (US$49/mês, 100 buscas/mês).
+ * Filtragem:
+ *   - Match LIKE no título com tokens da query (todos precisam aparecer)
+ *   - Filtro de preço (precoMin/precoMax) aplicado em SQL
+ *   - Ordena por scraped_at DESC (mais recente primeiro)
  */
 
-const cheerio = require('cheerio');
-const proxyFetch = require('./proxyFetch');
-
-const TIMEOUT = 12000;
-
-function slugify(s) {
-  return String(s || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
+const db = require('../db');
 
 async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
   if (!q) throw new Error('q obrigatório');
+
   const fullQ = modelo && !q.toLowerCase().includes(modelo.toLowerCase())
     ? `${q} ${modelo}`
     : q;
 
-  /* Monta URL: /<slug>?... — preço opcional */
-  let url = `https://lista.mercadolivre.com.br/${slugify(fullQ)}`;
-  const sp = new URLSearchParams();
-  if (filtros.precoMin || filtros.precoMax) {
-    const min = filtros.precoMin || 0;
-    const max = filtros.precoMax || '';
-    sp.set('price', `${min}-${max}`);
-  }
-  if (sp.toString()) url += `?${sp.toString()}`;
+  /* Quebra a query em tokens — cada token vira um LIKE %token%.
+     Tokens curtos (<3) são descartados pra não viciar match (ex: "c" em "c10"). */
+  const tokens = fullQ
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
 
-  let html;
+  if (tokens.length === 0) {
+    return { source: 'mercadolivre', results: [], note: 'query muito curta' };
+  }
+
+  /* Monta WHERE: LOWER(title) LIKE %t1% AND LOWER(title) LIKE %t2% ... */
+  const conditions = tokens.map((_, i) => `LOWER(title) LIKE ?`).join(' AND ');
+  const params = tokens.map((t) => `%${t}%`);
+
+  let priceClause = '';
+  if (filtros.precoMin) {
+    priceClause += ' AND price >= ?';
+    params.push(Number(filtros.precoMin));
+  }
+  if (filtros.precoMax) {
+    priceClause += ' AND price <= ?';
+    params.push(Number(filtros.precoMax));
+  }
+
+  params.push(Number(limit) || 30);
+
+  let result;
   try {
-    const resp = await proxyFetch.get(url, {
-      timeout: TIMEOUT,
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
-      },
-    });
-    html = resp.data;
+    result = await db.query(
+      `SELECT external_id, termo, modelo, title, price, url, thumb_url, free_shipping, scraped_at
+         FROM ml_offers_cache
+        WHERE ${conditions}${priceClause}
+        ORDER BY scraped_at DESC
+        LIMIT ?`,
+      params
+    );
   } catch (err) {
-    const status = err.response?.status;
-    const note = status === 403
-      ? 'Mercado Livre bloqueou — Worker precisa permitir lista.mercadolivre.com.br'
-      : null;
-    console.warn('[mercadoLivre] busca falhou:', err.message);
-    return { source: 'mercadolivre', results: [], error: err.message, note };
+    console.warn('[mercadoLivre] query cache falhou:', err.message);
+    return {
+      source: 'mercadolivre',
+      results: [],
+      error: err.message,
+      note: 'cache indisponível — rode o scraper em /api/admin/scrape-ml/trigger',
+    };
   }
 
-  try {
-    const $ = cheerio.load(html);
-    const results = [];
-    /* Cards de resultado — seletor estável da listagem ML */
-    $('li.ui-search-layout__item, .ui-search-result, .poly-card').slice(0, limit).each((_i, el) => {
-      const $el = $(el);
-      const $link = $el.find('a.poly-component__title, a.ui-search-link, h2 a').first();
-      const url = $link.attr('href') || $el.find('a[href*="/MLB-"]').first().attr('href');
-      if (!url) return;
-      const title = ($link.text() || $el.find('.poly-component__title, .ui-search-item__title').first().text() || '').trim();
-      if (!title) return;
+  const results = (result?.rows || []).map((r) => ({
+    source: 'mercadolivre',
+    externalId: r.external_id,
+    title: r.title,
+    price: r.price ? Number(r.price) : null,
+    currency: 'BRL',
+    url: r.url,
+    thumbUrl: r.thumb_url,
+    location: null,
+    raw: {
+      freeShipping: !!r.free_shipping,
+      scrapedAt: r.scraped_at,
+      termo: r.termo,
+    },
+  }));
 
-      /* Preço — várias variantes de DOM (depende da query renderizada) */
-      const priceText = $el.find('.andes-money-amount__fraction').first().text().trim();
-      const centsText = $el.find('.andes-money-amount__cents').first().text().trim();
-      let price = null;
-      if (priceText) {
-        const integer = parseInt(priceText.replace(/\D/g, ''), 10);
-        const cents = parseInt(centsText || '0', 10);
-        if (Number.isFinite(integer)) price = integer + (Number.isFinite(cents) ? cents / 100 : 0);
-      }
-
-      const thumb = $el.find('img.poly-component__picture, img.ui-search-result-image__element').first().attr('src')
-                || $el.find('img').first().attr('data-src')
-                || $el.find('img').first().attr('src');
-      const idMatch = url.match(/MLB-?(\d+)/);
-      const externalId = idMatch ? `MLB${idMatch[1]}` : url;
-
-      const freeShipping = $el.find('.poly-component__shipping, [class*="shipping"]').text().toLowerCase().includes('frete grátis');
-
-      results.push({
-        source: 'mercadolivre',
-        externalId,
-        title,
-        price,
-        currency: 'BRL',
-        url: url.startsWith('http') ? url : `https://www.mercadolivre.com.br${url}`,
-        thumbUrl: thumb && !thumb.startsWith('data:') ? thumb : null,
-        location: null,
-        raw: { freeShipping },
-      });
-    });
-    return { source: 'mercadolivre', results };
-  } catch (e) {
-    console.warn('[mercadoLivre] parser falhou:', e.message);
-    return { source: 'mercadolivre', results: [], error: 'parser falhou: ' + e.message };
-  }
+  return {
+    source: 'mercadolivre',
+    results,
+    note: results.length === 0
+      ? 'cache vazio pra esta busca — rode o scraper ou aguarde próximo cron (2h)'
+      : null,
+  };
 }
 
 module.exports = { search };

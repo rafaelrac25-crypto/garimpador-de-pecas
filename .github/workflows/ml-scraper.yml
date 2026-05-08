@@ -1,0 +1,41 @@
+name: ML Scraper
+
+on:
+  # Cron a cada 2h. UTC. Repo público = minutos ilimitados.
+  schedule:
+    - cron: '0 */2 * * *'
+  # Trigger manual via UI do GitHub OU API (botão "Atualizar agora" no app)
+  workflow_dispatch: {}
+
+# Evita 2 runs simultâneos pisando no mesmo cache
+concurrency:
+  group: ml-scraper
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        working-directory: scripts
+        run: |
+          npm init -y > /dev/null
+          npm install --silent playwright @neondatabase/serverless
+
+      - name: Install Chromium
+        working-directory: scripts
+        run: npx playwright install chromium --with-deps
+
+      - name: Run scraper
+        working-directory: scripts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scrape-ml.js
