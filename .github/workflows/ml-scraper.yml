@@ -48,6 +48,8 @@ jobs:
         working-directory: scripts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ML_USER: ${{ secrets.ML_USER }}
+          ML_PASSWORD: ${{ secrets.ML_PASSWORD }}
           ML_TERMO: ${{ inputs.termo }}
           ML_MODELO: ${{ inputs.modelo }}
         run: node scrape-ml.js
@@ -60,5 +62,7 @@ jobs:
           path: |
             scripts/ml-block-*.html
             scripts/ml-block-*.png
+            scripts/ml-login-fail.html
+            scripts/ml-login-fail.png
           if-no-files-found: ignore
           retention-days: 7

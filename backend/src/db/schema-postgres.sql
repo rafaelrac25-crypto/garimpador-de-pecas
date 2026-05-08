@@ -181,3 +181,13 @@ CREATE TABLE IF NOT EXISTS ml_terms_learned (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ml_terms_active ON ml_terms_learned(active, hits DESC);
+
+-- Sessão Playwright autenticada no ML. Single-row id=1.
+-- Scraper carrega no início, refaz login se inválida, salva ao fim.
+CREATE TABLE IF NOT EXISTS ml_session (
+  id INTEGER PRIMARY KEY,
+  storage_state TEXT,
+  saved_at TIMESTAMPTZ
+);
+
+INSERT INTO ml_session (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

@@ -14,6 +14,8 @@
  *
  * Variáveis de ambiente:
  *   DATABASE_URL — Neon Postgres (mesma do app)
+ *   ML_USER      — email/usuário ML (conta descartável criada pra scraping)
+ *   ML_PASSWORD  — senha
  *   ML_TERMO     — alternativa a --termo (workflow_dispatch passa via env)
  *   ML_MODELO    — alternativa a --modelo
  */
@@ -61,6 +63,89 @@ function slugify(s) {
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+/* Carrega/salva sessão Playwright autenticada do Neon. Evita re-login a cada
+   run. Storage state inclui cookies + localStorage; tamanho típico ~30-100KB. */
+async function loadSession(sql) {
+  try {
+    const r = await sql`SELECT storage_state, saved_at FROM ml_session WHERE id = 1`;
+    const row = r?.[0];
+    if (!row?.storage_state) return null;
+    /* Sessão velha (>10 dias) — força re-login pra evitar cookies expirados */
+    const ageDays = (Date.now() - new Date(row.saved_at).getTime()) / 86400000;
+    if (ageDays > 10) {
+      console.log(`[ml] sessão antiga (${ageDays.toFixed(1)}d) — re-login`);
+      return null;
+    }
+    return JSON.parse(row.storage_state);
+  } catch (e) {
+    console.warn('[ml] loadSession falhou:', e.message);
+    return null;
+  }
+}
+
+async function saveSession(sql, state) {
+  try {
+    const json = JSON.stringify(state);
+    await sql`UPDATE ml_session SET storage_state = ${json}, saved_at = NOW() WHERE id = 1`;
+    console.log(`[ml] session salva (${json.length} bytes)`);
+  } catch (e) {
+    console.warn('[ml] saveSession falhou:', e.message);
+  }
+}
+
+/* Tenta login no ML. Retorna true se logado com sucesso. ML usa fluxo
+   2-passos: usuário → senha. Conta nova precisa ter 2FA desabilitado. */
+async function loginIfNeeded(page) {
+  if (!process.env.ML_USER || !process.env.ML_PASSWORD) {
+    console.log('[ml] sem ML_USER/ML_PASSWORD — modo anônimo (provavel falha)');
+    return false;
+  }
+
+  try {
+    await page.goto('https://www.mercadolivre.com.br/jms/mlb/lgz/login', {
+      waitUntil: 'domcontentloaded', timeout: 25000,
+    });
+    /* Já logado? URL final fora de /lgz/ indica redirect pós-login. */
+    if (!page.url().includes('/lgz/')) {
+      console.log('[ml] já logado (redirect inicial)');
+      return true;
+    }
+
+    /* Passo 1: usuário */
+    await page.waitForSelector('input[name="user_id"], input[name="login"]', { timeout: 10000 });
+    const userInput = (await page.$('input[name="user_id"]')) || (await page.$('input[name="login"]'));
+    await userInput.fill(process.env.ML_USER);
+    await page.waitForTimeout(800 + Math.random() * 600);
+    await page.click('button[type="submit"], button:has-text("Continuar")');
+
+    /* Passo 2: senha */
+    await page.waitForSelector('input[name="password"]', { timeout: 12000 });
+    await page.fill('input[name="password"]', process.env.ML_PASSWORD);
+    await page.waitForTimeout(800 + Math.random() * 600);
+    await page.click('button[type="submit"], button:has-text("Entrar")');
+
+    /* Aguarda redirect pós-login */
+    await page.waitForURL((url) => !url.toString().includes('/lgz/'), { timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+
+    /* Verifica sucesso: title sem "Login" e URL não contém /lgz/ */
+    const finalUrl = page.url();
+    const finalTitle = await page.title().catch(() => '');
+    const success = !finalUrl.includes('/lgz/') && !/login|entrar/i.test(finalTitle);
+    console.log(`[ml] login ${success ? 'ok' : 'FAIL'} url=${finalUrl} title="${finalTitle}"`);
+    if (!success) {
+      /* Captura tela do erro pra debug */
+      try { await page.screenshot({ path: 'ml-login-fail.png' }); } catch {}
+      const html = await page.content();
+      require('fs').writeFileSync('ml-login-fail.html', html);
+    }
+    return success;
+  } catch (e) {
+    console.warn('[ml] login falhou:', e.message);
+    return false;
+  }
 }
 
 async function pickRotationTermo(sql) {
@@ -222,6 +307,11 @@ async function main() {
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
   ];
   const ua = uas[Math.floor(Math.random() * uas.length)];
+
+  /* Carrega sessão autenticada anterior (se existir e for recente) */
+  const savedState = await loadSession(sql);
+  if (savedState) console.log('[ml] reusando session salva');
+
   const context = await browser.newContext({
     userAgent: ua,
     locale: 'pt-BR',
@@ -230,18 +320,29 @@ async function main() {
     extraHTTPHeaders: {
       'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.5',
     },
-    geolocation: { latitude: -23.5505, longitude: -46.6333 },  /* São Paulo */
+    geolocation: { latitude: -23.5505, longitude: -46.6333 },
     permissions: ['geolocation'],
+    storageState: savedState || undefined,
   });
 
-  /* Pre-seta cookies BR pra ML não redirecionar pra versão global.
-     Esses são os cookies que site BR seta na primeira visita real. */
-  await context.addCookies([
-    { name: '_d2id', value: 'br', domain: '.mercadolivre.com.br', path: '/' },
-    { name: 'c_ui-navigation', value: '1', domain: '.mercadolivre.com.br', path: '/' },
-  ]);
+  /* Cookies BR só se não tem session (com session, não sobrescreve). */
+  if (!savedState) {
+    await context.addCookies([
+      { name: '_d2id', value: 'br', domain: '.mercadolivre.com.br', path: '/' },
+      { name: 'c_ui-navigation', value: '1', domain: '.mercadolivre.com.br', path: '/' },
+    ]);
+  }
 
   const page = await context.newPage();
+
+  /* Login se necessário (sem session salva ou session expirou) */
+  if (!savedState && process.env.ML_USER) {
+    const ok = await loginIfNeeded(page);
+    if (ok) {
+      const newState = await context.storageState();
+      await saveSession(sql, newState);
+    }
+  }
 
   let totalCount = 0;
   let ok = false;
