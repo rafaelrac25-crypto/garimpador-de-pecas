@@ -66,12 +66,17 @@ async function getViaScraperApi(url, opts = {}) {
     const sp = new URLSearchParams(opts.params).toString();
     finalUrl += (finalUrl.includes('?') ? '&' : '?') + sp;
   }
+  /* SCRAPERAPI_PREMIUM=true ativa proxies premium (necessário pra
+     Protected Domains tipo Mercado Livre). Só funciona em planos pagos —
+     free tier retorna 403. Default off. Custa 10 credits/req. */
+  const usePremium = process.env.SCRAPERAPI_PREMIUM === 'true';
   const apiUrl = 'https://api.scraperapi.com/'
     + `?api_key=${process.env.SCRAPERAPI_KEY}`
     + `&url=${encodeURIComponent(finalUrl)}`
-    + `&country_code=br`;
+    + `&country_code=br`
+    + (usePremium ? `&premium=true` : '');
   return axios.get(apiUrl, {
-    timeout: opts.timeout || 30000,
+    timeout: opts.timeout || 60000,
     responseType: opts.responseType || 'text',
     headers: {
       'Accept': opts.headers?.Accept || 'text/html,application/xhtml+xml',

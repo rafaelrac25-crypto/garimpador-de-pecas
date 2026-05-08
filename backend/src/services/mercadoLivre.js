@@ -7,9 +7,10 @@
  *
  * URL: https://lista.mercadolivre.com.br/<termo-com-hifens>
  *
- * Exige ScraperAPI (SCRAPERAPI_KEY) — Cloudflare Worker é detectado pelo
- * anti-bot do ML como "suspicious-traffic". ScraperAPI usa IP residencial
- * brasileiro e passa. Fallback: Worker CF se ScraperAPI ausente.
+ * Status: ML é "Protected Domain" no ScraperAPI — só plano pago consegue
+ * passar (premium=true). ScraperAPI free tier retorna 500. Cloudflare Worker
+ * também é detectado (suspicious-traffic). Solução pendente: Browserless,
+ * Playwright local, ou plano pago ScraperAPI Hobby (US$49/mês, 100 buscas/mês).
  */
 
 const cheerio = require('cheerio');
@@ -43,8 +44,8 @@ async function search({ q, modelo, filtros = {}, limit = 30 } = {}) {
 
   let html;
   try {
-    const resp = await proxyFetch.getViaScraperApi(url, {
-      timeout: 30000,
+    const resp = await proxyFetch.get(url, {
+      timeout: TIMEOUT,
       headers: {
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'pt-BR,pt;q=0.9',
