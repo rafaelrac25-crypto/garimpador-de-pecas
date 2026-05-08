@@ -51,3 +51,14 @@ jobs:
           ML_TERMO: ${{ inputs.termo }}
           ML_MODELO: ${{ inputs.modelo }}
         run: node scrape-ml.js
+
+      - name: Upload debug artifacts (em caso de bloqueio)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-debug-${{ github.run_id }}
+          path: |
+            scripts/ml-block-*.html
+            scripts/ml-block-*.png
+          if-no-files-found: ignore
+          retention-days: 7

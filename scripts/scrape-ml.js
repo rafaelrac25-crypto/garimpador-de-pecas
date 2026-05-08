@@ -101,8 +101,10 @@ async function scrapeTerm(page, termo) {
   const url = `https://lista.mercadolivre.com.br/${slugify(termo.q)}`;
   console.log(`[ml] ${termo.q} → ${url}`);
 
+  let response;
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
+    response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
+    console.log(`[ml] HTTP status: ${response?.status()}`);
     await page.waitForSelector('li.ui-search-layout__item, .poly-card, .ui-search-result', {
       timeout: 12000,
     }).catch(() => null);
@@ -112,6 +114,28 @@ async function scrapeTerm(page, termo) {
   } catch (err) {
     console.warn(`[ml] navegação falhou em "${termo.q}":`, err.message);
     return [];
+  }
+
+  /* Diagnóstico: dump título e primeiros 300 chars do body pra logs */
+  try {
+    const diag = await page.evaluate(() => ({
+      title: document.title,
+      bodyStart: document.body?.innerText?.slice(0, 300) || '',
+      hasCards: !!document.querySelector('li.ui-search-layout__item, .poly-card, .ui-search-result'),
+      bodyLen: document.body?.innerHTML?.length || 0,
+    }));
+    console.log(`[ml] DIAG title="${diag.title}" hasCards=${diag.hasCards} bodyLen=${diag.bodyLen}`);
+    console.log(`[ml] DIAG bodyStart: ${diag.bodyStart.replace(/\s+/g, ' ').slice(0, 200)}`);
+    /* Se não tem cards, salva HTML pra debug (artifact no workflow) */
+    if (!diag.hasCards) {
+      const fs = require('fs');
+      const html = await page.content();
+      fs.writeFileSync(`ml-block-${slugify(termo.q)}.html`, html);
+      try { await page.screenshot({ path: `ml-block-${slugify(termo.q)}.png`, fullPage: false }); } catch {}
+      console.log(`[ml] salvou ml-block-${slugify(termo.q)}.{html,png} pra debug`);
+    }
+  } catch (e) {
+    console.warn('[ml] diag falhou:', e.message);
   }
 
   const items = await page.evaluate((max) => {
