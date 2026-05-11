@@ -1,9 +1,10 @@
 name: ML Scraper
 
 on:
-  # Cron horário. 1 termo por run (anti-bot ML detecta padrão se múltiplos).
-  schedule:
-    - cron: '17 * * * *'
+  # Cron PAUSADO em 2026-05-11 a pedido do Rafa (pausa do projeto).
+  # Pra reativar: descomentar o bloco `schedule:` abaixo.
+  # schedule:
+  #   - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       termo:
