@@ -1,5 +1,28 @@
 # CRITICAL_STATE — Garimpador de Peças
 
+## ⏸️ PROJETO PAUSADO — 2026-05-11 (commit 70708a3)
+
+**Estado:** Rafa pausou o projeto até retomar em sessão futura. Motivo: emails de notificação chegando no inbox enquanto ele cuida de outras coisas.
+
+**O que foi pausado:**
+- ✅ **Cron GitHub Actions `ml-scraper.yml`** — bloco `schedule: - cron: '17 * * * *'` comentado (linha 5-6 do YAML). Era a causa principal dos emails: rodava de hora em hora, falhava por falta de bootstrap manual ML, GitHub mandava email de workflow failure. `workflow_dispatch` segue ativo (só dispara manual, não notifica).
+
+**O que NÃO precisou pausar:**
+- **Vercel deploys** — não manda email em build sucesso, só em falha. Build atual está saudável.
+- **Neon** — só notifica sobre billing/limite (free tier, baixo risco).
+- **OAuth ML token expirado** (08/05) — não gera email automático, só falha no app quando o user clica.
+
+**Como REATIVAR (próxima sessão):**
+1. Descomentar bloco `schedule:` em `.github/workflows/ml-scraper.yml` (remover os `#` das linhas 5-6)
+2. `git commit -m "chore(ci): reativar cron ML scraper" && git push`
+3. **Antes** disso, idealmente fazer o bootstrap manual da sessão ML (ver checkpoint 2026-05-08 abaixo) — senão o cron volta a falhar de novo
+
+**Se ainda chegar email mesmo com cron pausado:**
+- GitHub: settings.github.com/notifications → desabilitar "Actions" pra esse repo
+- Vercel: vercel.com/account/notifications → desativar deploy emails do projeto
+
+---
+
 ## ✓ CHECKPOINT — 2026-05-07 — PROD LIVE + DOMÍNIO c14docosta + IMG PROXY (commit c36944b)
 
 **Estado atual:**
